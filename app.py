@@ -1,6 +1,8 @@
 import os
 import json
 import random
+import difflib
+import requests
 from flask import Flask, request, abort
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
@@ -16,23 +18,36 @@ line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 儲存使用者狀態
 user_sessions = {}
 
-# 科目題庫路徑
 SUBJECTS = {
-    "血清免疫": "question_bank.json"
+    "血清免疫": "examimmun",
+    "血液與血庫": "exmablood",
+    "生物化學": "exambiochemicy",
+    "分子檢驗與顯微": "exammolecu",
+    "生理與病理": "exampatho",
+    "微生物與微生物學": "exammicrobiog"
 }
 
-def load_question_bank(subject_name):
-    path = SUBJECTS.get(subject_name)
-    if path:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+def match_subject_name(input_name):
+    best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
+    return best_match[0] if best_match else None
+
+def load_question_bank(repo):
+    api_url = f"https://api.github.com/repos/shaintane/{repo}/contents"
+    res = requests.get(api_url)
+    if res.status_code == 200:
+        files = res.json()
+        for file in files:
+            if file["name"].startswith("question_bank_") and file["name"].endswith(".json"):
+                raw_url = file["download_url"]
+                return requests.get(raw_url).json()
     return []
 
-def format_question(q, index):
-    return f"第 {index+1} 題：{q['題目']}\n" + "\n".join(q['選項'])
+def format_question(q, index, repo):
+    image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}.jpg" if q.get("圖片連結") else ""
+    base = f"第 {index+1} 題：{q['題目']}\n" + "\n".join(q['選項'])
+    return base + (f"\n\n{image_url}" if image_url else "")
 
 def generate_explanation(question, student_answer):
     correct = question["正解"]
@@ -71,7 +86,6 @@ def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
-    # 題號查詢觸發 AI 解析
     if user_input.startswith("題號"):
         try:
             target_qnum = int(user_input.replace("題號", "").strip())
@@ -91,26 +105,30 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式：題號3"))
             return
 
-    if user_id not in user_sessions:
-        if "血清免疫" in user_input:
-            questions = load_question_bank("血清免疫")
+    if user_id not in user_sessions or user_sessions[user_id].get("current", 20) >= 20:
+        matched_subject = match_subject_name(user_input)
+        if matched_subject:
+            repo = SUBJECTS[matched_subject]
+            questions = load_question_bank(repo)
             selected = random.sample(questions, 20)
             user_sessions[user_id] = {
-                "subject": "血清免疫",
+                "subject": matched_subject,
+                "repo": repo,
                 "questions": selected,
                 "current": 0,
                 "answers": [],
                 "錯題": []
             }
             first_q = selected[0]
-            reply = format_question(first_q, 0)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已選擇『血清免疫』科目，開始測驗：\n" + reply))
+            reply = format_question(first_q, 0, repo)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已選擇『{matched_subject}』科目，開始測驗：\n" + reply))
         else:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="請輸入欲練習科目，例如：血清免疫"))
         return
 
     session = user_sessions[user_id]
     current_index = session["current"]
+    repo = session["repo"]
 
     if current_index >= 20:
         wrong_answers = session["錯題"]
@@ -145,7 +163,7 @@ def handle_message(event):
 
     if session["current"] < 20:
         next_q = session["questions"][session["current"]]
-        reply = format_question(next_q, session["current"])
+        reply = format_question(next_q, session["current"], repo)
     else:
         reply = "🎉 測驗結束，請稍後查看統計結果與解析。"
 
@@ -153,3 +171,4 @@ def handle_message(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
