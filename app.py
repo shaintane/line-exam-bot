@@ -1,23 +1,27 @@
 from flask import Flask, request, abort
-import json
 import os
+import json
 import openai
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
+# 載入環境變數
 load_dotenv()
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
+# ✅ Railway 上的環境變數名稱
+line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
+handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# 載入題庫
 with open("question_bank.json", "r", encoding="utf-8") as f:
     question_bank = json.load(f)
 
+# 解析輸入格式：題號2，我選B
 def find_question(text):
     if "題號" in text and "我選" in text:
         try:
@@ -29,6 +33,7 @@ def find_question(text):
             return None, None
     return None, None
 
+# GPT 解題解析
 def generate_explanation(question, student_answer):
     correct = question["正解"]
     prompt = f"""
@@ -49,22 +54,27 @@ def generate_explanation(question, student_answer):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"發生錯誤：{str(e)}"
+        return f"⚠️ 發生錯誤：{str(e)}"
 
+# 接收 LINE Webhook
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+
     return 'OK'
 
+# 處理訊息事件
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_input = event.message.text
     q_number, student_choice = find_question(user_input)
+
     if q_number is not None and student_choice:
         question = next((q for q in question_bank if q['題號'] == q_number), None)
         if question:
@@ -76,13 +86,15 @@ def handle_message(event):
         else:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="找不到該題號，請確認輸入格式。")
+                TextSendMessage(text="❌ 找不到該題號，請確認輸入格式。")
             )
     else:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="請輸入格式：題號1，我選A")
+            TextSendMessage(text="請輸入格式：題號2，我選B")
         )
 
+# Railway 使用的啟動方式
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 8080))  # Railway 預設 port=8080
+    app.run(host="0.0.0.0", port=port)
