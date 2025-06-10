@@ -5,6 +5,7 @@ import difflib
 import requests
 import re
 from flask import Flask, request, abort
+from datetime import datetime
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -19,6 +20,20 @@ line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# JSON user profile setup
+PROFILE_FILE = "user_profiles.json"
+
+def load_user_profiles():
+    if os.path.exists(PROFILE_FILE):
+        with open(PROFILE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_user_profiles(data):
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+user_profiles = load_user_profiles()
 user_sessions = {}
 NUM_QUESTIONS = 10
 
@@ -94,18 +109,62 @@ def generate_explanation(question, student_answer):
             timeout=10
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
+    except Exception:
         return None
-
-# 其他 handle_message 與 webhook 保留原樣...
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
-    # ...（略）...
+    # Step 1: 新使用者須註冊
+    if user_id not in user_profiles:
+        user_profiles[user_id] = { "狀態": "待填寫" }
+        save_user_profiles(user_profiles)
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="👋 歡迎加入！請依照格式輸入您的資料：\n\n姓名/學校/學號\n（例如：王小明/OO醫學大學/M123456）")
+        )
+        return
 
+    # Step 2: 收集註冊資料
+    if user_profiles.get(user_id, {}).get("狀態") == "待填寫":
+        parts = user_input.split("/")
+        if len(parts) == 3:
+            user_profiles[user_id] = {
+                "姓名": parts[0].strip(),
+                "學校": parts[1].strip(),
+                "學號": parts[2].strip(),
+                "加入日期": datetime.today().strftime("%Y-%m-%d"),
+                "狀態": "已加入"
+            }
+            save_user_profiles(user_profiles)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 資料已登記，歡迎開始使用測驗功能！"))
+        else:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請依正確格式輸入：姓名/學校/學號"))
+        return
+
+    # Step 3: 檢查是否為白名單
+    profile = user_profiles.get(user_id)
+    if not profile or profile.get("狀態") != "已加入":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您尚未註冊，請先輸入 姓名/學校/學號 才能使用測驗功能。"))
+        return
+
+    # Step 4: 刪除學號指令
+    if user_input.startswith("刪除 "):
+        sid = user_input.replace("刪除", "").strip()
+        removed = False
+        for uid, prof in list(user_profiles.items()):
+            if prof.get("學號") == sid:
+                del user_profiles[uid]
+                save_user_profiles(user_profiles)
+                removed = True
+                break
+        msg = f"✅ 已移除學號 {sid} 的測驗權限" if removed else "❌ 查無該學號"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+        return
+
+    # 開始測驗流程（如原始碼）
     if user_id not in user_sessions or user_sessions[user_id].get("current", NUM_QUESTIONS) >= NUM_QUESTIONS:
         matched_subject = match_subject_name(user_input)
         if matched_subject:
@@ -134,8 +193,6 @@ def handle_message(event):
         else:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="請輸入欲練習科目，例如：血清免疫"))
         return
-
-    # ...（其餘保持原樣）...
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
