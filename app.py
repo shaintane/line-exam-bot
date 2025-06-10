@@ -165,6 +165,8 @@ def handle_message(event):
             repo = SUBJECTS[matched_subject]
             questions = load_question_bank(repo)
             selected = random.sample(questions, NUM_QUESTIONS)
+for idx, q in enumerate(selected):
+    q["題號"] = idx + 1  # 題號從 1 開始
             user_sessions[user_id] = {
                 "subject": matched_subject,
                 "repo": repo,
