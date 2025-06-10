@@ -20,8 +20,9 @@ line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# JSON user profile setup
+# JSON profile setup
 PROFILE_FILE = "user_profiles.json"
+ADMIN_FILE = "admin_users.json"
 
 def load_user_profiles():
     if os.path.exists(PROFILE_FILE):
@@ -33,17 +34,28 @@ def save_user_profiles(data):
     with open(PROFILE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def load_admin_users():
+    if os.path.exists(ADMIN_FILE):
+        with open(ADMIN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_admin_users(admin_list):
+    with open(ADMIN_FILE, "w", encoding="utf-8") as f:
+        json.dump(admin_list, f, ensure_ascii=False, indent=2)
+
 user_profiles = load_user_profiles()
+admin_users = load_admin_users()
 user_sessions = {}
 NUM_QUESTIONS = 10
 
 SUBJECTS = {
-    "血清免疫": "examimmun",
-    "血液與血庫": "exmablood",
-    "生物化學": "exambiochemicy",
-    "分子檢驗與顯微": "exammolecu",
-    "生理與病理": "exampatho",
-    "微生物與微生物學": "exammicrobiog"
+    "臨床血清免疫學": "examimmun",
+    "臨床血液與血庫學": "exmablood",
+    "生物化學及臨床生化": "exambiochemicy",
+    "醫學分子與鏡檢學": "exammolecu",
+    "臨床生理與病理學": "exampatho",
+    "微生物與臨床微生物學": "exammicrobiog"
 }
 
 def match_subject_name(input_name):
@@ -117,6 +129,23 @@ def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
+    # Admin 登記程序
+    if user_input == "admin":
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"⚙️ 您的 LINE ID 是：{user_id}\n若要註冊為管理者請輸入：確認 admin")
+        )
+        return
+
+    if user_input == "確認 admin":
+        if user_id not in admin_users:
+            admin_users.append(user_id)
+            save_admin_users(admin_users)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 您已成功註冊為管理者，未來可直接使用所有功能。"))
+        else:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="您已是管理者，無需重複註冊。"))
+        return
+
     # Step 1: 新使用者須註冊
     if user_id not in user_profiles:
         user_profiles[user_id] = { "狀態": "待填寫" }
@@ -144,11 +173,12 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請依正確格式輸入：姓名/學校/學號"))
         return
 
-    # Step 3: 檢查是否為白名單
-    profile = user_profiles.get(user_id)
-    if not profile or profile.get("狀態") != "已加入":
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您尚未註冊，請先輸入 姓名/學校/學號 才能使用測驗功能。"))
-        return
+    # Step 3: 檢查是否為 admin 或白名單
+    if user_id not in admin_users:
+        profile = user_profiles.get(user_id)
+        if not profile or profile.get("狀態") != "已加入":
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您尚未註冊，請先輸入 姓名/學校/學號 才能使用測驗功能。"))
+            return
 
     # Step 4: 刪除學號指令
     if user_input.startswith("刪除 "):
@@ -164,7 +194,7 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
         return
 
-    # 開始測驗流程（如原始碼）
+    # 開始測驗流程
     if user_id not in user_sessions or user_sessions[user_id].get("current", NUM_QUESTIONS) >= NUM_QUESTIONS:
         matched_subject = match_subject_name(user_input)
         if matched_subject:
@@ -196,7 +226,6 @@ def handle_message(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
 
 
 
