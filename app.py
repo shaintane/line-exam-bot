@@ -47,7 +47,7 @@ def load_question_bank(repo):
     return []
 
 def format_question(q, index, repo):
-    image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}.jpg" if q.get("圖片連結") else ""
+    image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
     base = f"第 {index+1} 題：{q['題目']}\n" + "\n".join(q['選項'])
     return base + (f"\n\n{image_url}" if image_url else "")
 
