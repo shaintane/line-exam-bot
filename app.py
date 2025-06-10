@@ -50,12 +50,12 @@ user_sessions = {}
 NUM_QUESTIONS = 10
 
 SUBJECTS = {
-    "臨床血清免疫學": "examimmun",
-    "臨床血液與血庫學": "exmablood",
-    "生物化學及臨床生化": "exambiochemicy",
-    "醫學分子與鏡檢學": "exammolecu",
-    "臨床生理與病理學": "exampatho",
-    "微生物與臨床微生物學": "exammicrobiog"
+    "血清免疫": "examimmun",
+    "血液與血庫": "exmablood",
+    "生物化學": "exambiochemicy",
+    "分子檢驗與顯微": "exammolecu",
+    "生理與病理": "exampatho",
+    "微生物與微生物學": "exammicrobiog"
 }
 
 def match_subject_name(input_name):
@@ -226,6 +226,4 @@ def handle_message(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
-
 
