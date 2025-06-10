@@ -20,7 +20,7 @@ line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# JSON profile setup
+# JSON 檔案管理
 PROFILE_FILE = "user_profiles.json"
 ADMIN_FILE = "admin_users.json"
 
@@ -40,9 +40,9 @@ def load_admin_users():
             return json.load(f)
     return []
 
-def save_admin_users(admin_list):
+def save_admin_users(data):
     with open(ADMIN_FILE, "w", encoding="utf-8") as f:
-        json.dump(admin_list, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 user_profiles = load_user_profiles()
 admin_users = load_admin_users()
@@ -129,7 +129,7 @@ def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
-    # Admin 登記程序
+    # ✅ 管理員註冊流程
     if user_input == "admin":
         line_bot_api.reply_message(
             event.reply_token,
@@ -146,55 +146,39 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="您已是管理者，無需重複註冊。"))
         return
 
-    # Step 1: 新使用者須註冊
-    if user_id not in user_profiles:
-        user_profiles[user_id] = { "狀態": "待填寫" }
-        save_user_profiles(user_profiles)
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="👋 歡迎加入！請依照格式輸入您的資料：\n\n姓名/學校/學號\n（例如：王小明/OO醫學大學/M123456）")
-        )
-        return
-
-    # Step 2: 收集註冊資料
-    if user_profiles.get(user_id, {}).get("狀態") == "待填寫":
-        parts = user_input.split("/")
-        if len(parts) == 3:
-            user_profiles[user_id] = {
-                "姓名": parts[0].strip(),
-                "學校": parts[1].strip(),
-                "學號": parts[2].strip(),
-                "加入日期": datetime.today().strftime("%Y-%m-%d"),
-                "狀態": "已加入"
-            }
-            save_user_profiles(user_profiles)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 資料已登記，歡迎開始使用測驗功能！"))
-        else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請依正確格式輸入：姓名/學校/學號"))
-        return
-
-    # Step 3: 檢查是否為 admin 或白名單
+    # 若非管理員，檢查是否註冊
     if user_id not in admin_users:
+        if user_id not in user_profiles:
+            user_profiles[user_id] = {"狀態": "待填寫"}
+            save_user_profiles(user_profiles)
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="👋 歡迎加入！請依照格式輸入您的資料：\n\n姓名/學校/學號\n（例如：王小明/OO醫學大學/M123456）")
+            )
+            return
+
+        if user_profiles.get(user_id, {}).get("狀態") == "待填寫":
+            parts = user_input.split("/")
+            if len(parts) == 3:
+                user_profiles[user_id] = {
+                    "姓名": parts[0].strip(),
+                    "學校": parts[1].strip(),
+                    "學號": parts[2].strip(),
+                    "加入日期": datetime.today().strftime("%Y-%m-%d"),
+                    "狀態": "已加入"
+                }
+                save_user_profiles(user_profiles)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 資料已登記，歡迎開始使用測驗功能！"))
+            else:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請依正確格式輸入：姓名/學校/學號"))
+            return
+
         profile = user_profiles.get(user_id)
         if not profile or profile.get("狀態") != "已加入":
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您尚未註冊，請先輸入 姓名/學校/學號 才能使用測驗功能。"))
             return
 
-    # Step 4: 刪除學號指令
-    if user_input.startswith("刪除 "):
-        sid = user_input.replace("刪除", "").strip()
-        removed = False
-        for uid, prof in list(user_profiles.items()):
-            if prof.get("學號") == sid:
-                del user_profiles[uid]
-                save_user_profiles(user_profiles)
-                removed = True
-                break
-        msg = f"✅ 已移除學號 {sid} 的測驗權限" if removed else "❌ 查無該學號"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
-        return
-
-    # 開始測驗流程
+    # 處理測驗流程
     if user_id not in user_sessions or user_sessions[user_id].get("current", NUM_QUESTIONS) >= NUM_QUESTIONS:
         matched_subject = match_subject_name(user_input)
         if matched_subject:
@@ -226,4 +210,5 @@ def handle_message(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
 
