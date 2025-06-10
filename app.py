@@ -19,6 +19,7 @@ handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
+NUM_QUESTIONS = 10
 
 SUBJECTS = {
     "血清免疫": "examimmun",
@@ -105,19 +106,34 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式：題號3"))
             return
 
-    if user_id not in user_sessions or user_sessions[user_id].get("current", 20) >= 20:
+    if user_input in ["結果", "統計", "統計結果"] and user_id in user_sessions:
+        session = user_sessions[user_id]
+        if session.get("統計已回應"):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 統計已提供，請輸入題號查詢解析或重新選擇科目。"))
+            return
+        wrong_answers = session["錯題"]
+        total = len(session["answers"])
+        wrong_count = len(wrong_answers)
+        wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
+        summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
+        session["統計已回應"] = True
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
+        return
+
+    if user_id not in user_sessions or user_sessions[user_id].get("current", NUM_QUESTIONS) >= NUM_QUESTIONS:
         matched_subject = match_subject_name(user_input)
         if matched_subject:
             repo = SUBJECTS[matched_subject]
             questions = load_question_bank(repo)
-            selected = random.sample(questions, 20)
+            selected = random.sample(questions, NUM_QUESTIONS)
             user_sessions[user_id] = {
                 "subject": matched_subject,
                 "repo": repo,
                 "questions": selected,
                 "current": 0,
                 "answers": [],
-                "錯題": []
+                "錯題": [],
+                "統計已回應": False
             }
             first_q = selected[0]
             reply = format_question(first_q, 0, repo)
@@ -130,13 +146,8 @@ def handle_message(event):
     current_index = session["current"]
     repo = session["repo"]
 
-    if current_index >= 20:
-        wrong_answers = session["錯題"]
-        total = len(session["answers"])
-        wrong_count = len(wrong_answers)
-        wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
-        summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
+    if current_index >= NUM_QUESTIONS:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🎉 測驗結束，請輸入『結果』查看統計與解析。"))
         return
 
     user_answer = user_input.strip().upper()
@@ -161,14 +172,15 @@ def handle_message(event):
         })
     session["current"] += 1
 
-    if session["current"] < 20:
+    if session["current"] < NUM_QUESTIONS:
         next_q = session["questions"][session["current"]]
         reply = format_question(next_q, session["current"], repo)
     else:
-        reply = "🎉 測驗結束，請稍後查看統計結果與解析。"
+        reply = "🎉 測驗結束，請輸入『結果』查看統計與解析。"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
 
