@@ -13,13 +13,41 @@ from openai import OpenAI
 
 load_dotenv()
 
+WHITELIST_FILE = "whitelist.json"
+
+def load_whitelist():
+    if not os.path.exists(WHITELIST_FILE):
+        return {}
+    with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_whitelist(data):
+    with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+def is_user_active(user):
+    today = datetime.now().date()
+    start = datetime.strptime(user["start_date"], "%Y-%m-%d").date()
+    end = datetime.strptime(user["end_date"], "%Y-%m-%d").date()
+    return start <= today <= end
+
+def is_valid_date(date_str):
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
 app = Flask(__name__)
 line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
-NUM_QUESTIONS = 5  # 修改為 5 題
+registration_buffer = {}
+DEV_USER_ID = "shaintane"
+
+NUM_QUESTIONS = 5
 
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
@@ -45,8 +73,8 @@ def normalize_answer(ans):
     return ans.strip().replace('.', '').replace('．', '').upper().replace('Ｂ', 'B').replace('Ａ', 'A').replace('Ｃ', 'C').replace('Ｄ', 'D')
 
 def match_subject_name(input_name):
-    if input_name in ["微生物"]:
-        input_name = "臨床微生物學"
+    if input_name in ALIAS:
+        input_name = ALIAS[input_name]
     best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
     return best_match[0] if best_match else None
 
@@ -103,6 +131,47 @@ def callback():
 def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
+    whitelist = load_whitelist()
+
+    if user_id == DEV_USER_ID:
+        pass
+    elif user_id not in whitelist:
+        if user_id not in registration_buffer:
+            registration_buffer[user_id] = []
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(
+                text="🎓 歡迎使用國考 AI 助教系統！請依序輸入以下 6 項資料（每行一項）：\n1. 學校\n2. 姓名\n3. 學號\n4. LINE ID（可略過，將自動使用）\n5. 實習起始日 (YYYY-MM-DD)\n6. 實習結束日 (YYYY-MM-DD)"))
+            return
+        registration_buffer[user_id].append(user_input)
+        if len(registration_buffer[user_id]) < 6:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(
+                text=f"✅ 已收到第 {len(registration_buffer[user_id])} 項，請輸入第 {len(registration_buffer[user_id]) + 1} 項："))
+            return
+        school, name, student_id, line_id_input, start_date, end_date = registration_buffer[user_id]
+        if not is_valid_date(start_date) or not is_valid_date(end_date):
+            del registration_buffer[user_id]
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(
+                text="⚠️ 日期格式錯誤，請使用 YYYY-MM-DD 格式。請重新開始註冊流程。"))
+            return
+        whitelist[user_id] = {
+            "school": school,
+            "name": name,
+            "student_id": student_id,
+            "line_id": user_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "role": "intern"
+        }
+        save_whitelist(whitelist)
+        del registration_buffer[user_id]
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 註冊完成，請輸入科目名稱開始測驗。"))
+        return
+
+    if user_id != DEV_USER_ID:
+        user_info = whitelist.get(user_id)
+        if not is_user_active(user_info):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您的使用期限已到，請洽管理員。"))
+            return
+
 
     matched_subject = match_subject_name(user_input)
     if matched_subject:
