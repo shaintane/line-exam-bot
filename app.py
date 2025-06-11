@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from flask import Flask, request, abort
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
@@ -8,19 +9,28 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from openai import OpenAI
 
 load_dotenv()
-
 app = Flask(__name__)
 
-# 初始化 LINE API
 line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
-
-# 初始化 OpenAI (新版 SDK)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 載入題庫
-with open("question_bank.json", "r", encoding="utf-8") as f:
-    question_bank = json.load(f)
+question_bank = []
+
+def load_question_bank_from_github():
+    global question_bank
+    repo = "examimmun"
+    api_url = f"https://api.github.com/repos/shaintane/{repo}/contents"
+    res = requests.get(api_url)
+    if res.status_code == 200:
+        files = res.json()
+        for file in files:
+            if file["name"].startswith("question_bank_") and file["name"].endswith(".json"):
+                raw_url = file["download_url"]
+                question_bank = requests.get(raw_url).json()
+                print(f"✅ 題庫載入成功，共 {len(question_bank)} 題")
+                return
+    print("❌ 題庫載入失敗")
 
 def find_question(text):
     if "題號" in text and "我選" in text:
@@ -53,7 +63,7 @@ def generate_explanation(question, student_answer):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"發生錯誤：{str(e)}"
+        return f"⚠️ 發生錯誤：{str(e)}"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -69,24 +79,21 @@ def callback():
 def handle_message(event):
     user_input = event.message.text
     q_number, student_choice = find_question(user_input)
+
+    if not question_bank:
+        load_question_bank_from_github()
+
     if q_number is not None and student_choice:
-        question = next((q for q in question_bank if q['題號'] == q_number), None)
+        question = next((q for q in question_bank if q.get('題號') == q_number), None)
         if question:
             explanation = generate_explanation(question, student_choice)
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=explanation)
-            )
+            image_url = f"https://raw.githubusercontent.com/shaintane/examimmun/main/{question['圖片連結']}" if question.get("圖片連結") else None
+            full_reply = explanation + (f"\n\n🖼 圖片參考：{image_url}" if image_url else "")
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=full_reply))
         else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="找不到該題號，請確認輸入格式。")
-            )
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ 找不到該題號，請確認是否輸入正確。"))
     else:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="請輸入格式：題號1，我選A")
-        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="請輸入格式：題號1，我選A"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
