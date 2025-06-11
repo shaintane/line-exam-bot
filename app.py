@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import QuickReply, QuickReplyButton, MessageAction
 from openai import OpenAI
 
 load_dotenv()
@@ -86,10 +87,27 @@ def callback():
         abort(400)
     return 'OK'
 
+
+# 發送快速回覆科目按鈕
+def send_subject_selection(event):
+    quick_reply_items = [
+        QuickReplyButton(action=MessageAction(label=name, text=name))
+        for name in SUBJECTS.keys()
+    ]
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(
+            text="請選擇您要練習的科目：",
+            quick_reply=QuickReply(items=quick_reply_items)
+        )
+    )
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
+    if user_input in ["開始測驗", "開始", "start"]:
+        send_subject_selection(event)
+        return
 
     # 多題 AI 解析觸發：解析 3 或 解析 2,5,7
     if user_input.startswith("題號"):
