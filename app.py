@@ -119,12 +119,7 @@ def generate_explanation(question, student_answer):
 
 @app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers["X-Line-Signature"]
-    body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
+    print("📩 收到 webhook 請求")
     return "OK"
 
 @handler.add(MessageEvent, message=TextMessage)
