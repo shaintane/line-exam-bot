@@ -29,7 +29,7 @@ SUBJECTS = {
     "生物化學": "exambiochemicy",
     "分子檢驗與顯微": "exammolecu",
     "生理與病理": "exampatho",
-    "微生物與微生物學": "exammicrobiog"
+    "微生物與微生物學": "exammicrobiog",
 
 SUBJECT_ALIASES = {
     "臨床血清免疫學": "血清免疫",
