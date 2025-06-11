@@ -134,7 +134,7 @@ def handle_message(event):
     whitelist = load_whitelist()
 
     if user_id == DEV_USER_ID:
-    pass
+       pass
 elif user_id not in whitelist:
     if user_id not in registration_buffer:
         registration_buffer[user_id] = []
