@@ -3,6 +3,7 @@ import json
 import random
 import difflib
 import requests
+import re
 from flask import Flask, request, abort
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
@@ -19,6 +20,7 @@ handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
+NUM_QUESTIONS = 10
 
 SUBJECTS = {
     "血清免疫": "examimmun",
@@ -65,11 +67,12 @@ def generate_explanation(question, student_answer):
             messages=[
                 {"role": "system", "content": "你是一位專業的國考解析導師。"},
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            timeout=10
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"⚠️ AI 解析失敗：{str(e)}"
+        return None
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -86,6 +89,40 @@ def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
+    # 多題 AI 解析觸發：解析 3 或 解析 2,5,7
+    if user_input.startswith("解析"):
+        session = user_sessions.get(user_id)
+        if not session:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 尚未啟動測驗，請先完成一次測驗後再查詢解析。"))
+            return
+
+        requested_nums = list(map(int, re.findall(r'\d+', user_input)))
+        if not requested_nums:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式如：解析 3 或 解析 2,4,5"))
+            return
+
+        requested_nums = requested_nums[:3]
+        wrong_map = {q["題號"]: q for q in session["錯題"]}
+        question_map = {q["題號"]: q for q in session["questions"]}
+
+        explanations = []
+        for num in requested_nums:
+            if num not in wrong_map or num not in question_map:
+                explanations.append(f"⚠️ 題號 {num} 無錯誤記錄或題目資料，無法解析。")
+                continue
+            full_q = question_map[num]
+            user_ans = wrong_map[num]["作答"]
+            explanation = generate_explanation(full_q, user_ans)
+            if explanation:
+                explanations.append(f"📘 第 {num} 題解析：\n{explanation}")
+            else:
+                explanations.append(f"⚠️ 抱歉，目前暫時無法提供第 {num} 題的 AI 解釋，請稍後再試。")
+
+        reply_text = "\n\n".join(explanations)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+        return
+
+    # 單題解析觸發：題號3
     if user_input.startswith("題號"):
         try:
             target_qnum = int(user_input.replace("題號", "").strip())
@@ -97,7 +134,10 @@ def handle_message(event):
             full_question = next((q for q in session["questions"] if q["題號"] == target_qnum), None)
             if matched and full_question:
                 explanation = generate_explanation(full_question, matched["作答"])
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=explanation))
+                if explanation:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=explanation))
+                else:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 抱歉，目前暫時無法提供 AI 解釋，請稍後再試"))
             else:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 查無此題號，請確認題號是否正確。"))
             return
@@ -105,20 +145,37 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式：題號3"))
             return
 
-    if user_id not in user_sessions or user_sessions[user_id].get("current", 20) >= 20:
+    if user_input in ["結果", "統計", "統計結果"] and user_id in user_sessions:
+        session = user_sessions[user_id]
+        if session.get("統計已回應"):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 統計已提供，請輸入題號查詢解析或重新選擇科目。"))
+            return
+        wrong_answers = session["錯題"]
+        total = len(session["answers"])
+        wrong_count = len(wrong_answers)
+        wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
+        summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3 或 解析 2,5,7"
+        session["統計已回應"] = True
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
+        return
+
+    if user_id not in user_sessions or user_sessions[user_id].get("current", NUM_QUESTIONS) >= NUM_QUESTIONS:
         matched_subject = match_subject_name(user_input)
         if matched_subject:
             repo = SUBJECTS[matched_subject]
             questions = load_question_bank(repo)
-            selected = random.sample(questions, 20)
+            selected = random.sample(questions, NUM_QUESTIONS)
             user_sessions[user_id] = {
                 "subject": matched_subject,
                 "repo": repo,
                 "questions": selected,
                 "current": 0,
                 "answers": [],
-                "錯題": []
+                "錯題": [],
+                "統計已回應": False
             }
+            for idx, q in enumerate(selected):
+                q["題號"] = idx + 1
             first_q = selected[0]
             reply = format_question(first_q, 0, repo)
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已選擇『{matched_subject}』科目，開始測驗：\n" + reply))
@@ -130,13 +187,8 @@ def handle_message(event):
     current_index = session["current"]
     repo = session["repo"]
 
-    if current_index >= 20:
-        wrong_answers = session["錯題"]
-        total = len(session["answers"])
-        wrong_count = len(wrong_answers)
-        wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
-        summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
+    if current_index >= NUM_QUESTIONS:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🎉 測驗結束，請輸入『結果』查看統計與解析。"))
         return
 
     user_answer = user_input.strip().upper()
@@ -161,11 +213,11 @@ def handle_message(event):
         })
     session["current"] += 1
 
-    if session["current"] < 20:
+    if session["current"] < NUM_QUESTIONS:
         next_q = session["questions"][session["current"]]
         reply = format_question(next_q, session["current"], repo)
     else:
-        reply = "🎉 測驗結束，請稍後查看統計結果與解析。"
+        reply = "🎉 測驗結束，請輸入『結果』查看統計與解析。"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
