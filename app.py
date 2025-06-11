@@ -23,24 +23,12 @@ user_sessions = {}
 NUM_QUESTIONS = 5
 
 SUBJECTS = {
-    "臨床血清免疫學": "examimmun",
-    "臨床血液與血庫學": "exmablood",
-    "臨床生物化學": "exambiochemicy",
-    "醫學分子檢驗與鏡檢學": "exammolecu",
-    "臨床生理與病理學": "exampatho",
-    "臨床微生物學": "exammicrobiog"
-}
-
-ALIASES = {
-    "微生物": "臨床微生物學",
-    "病毒學": "臨床微生物學",
-    "微生物學": "臨床微生物學",
-    "血清免疫": "臨床血清免疫學",
-    "血液與血庫": "臨床血液與血庫學",
-    "生物化學": "臨床生物化學",
-    "分子檢驗": "醫學分子檢驗與鏡檢學",
-    "顯微檢查": "醫學分子檢驗與鏡檢學",
-    "生理與病理": "臨床生理與病理學"
+    "血清免疫": "examimmun",
+    "血液與血庫": "exmablood",
+    "生物化學": "exambiochemicy",
+    "分子檢驗與顯微": "exammolecu",
+    "生理與病理": "exampatho",
+    "微生物與微生物學": "exammicrobiog"
 }
 
 def match_subject_name(input_name):
