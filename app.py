@@ -19,7 +19,7 @@ handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
-NUM_QUESTIONS = 10
+NUM_QUESTIONS = 5  # 修改為 5 題
 
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
@@ -30,11 +30,12 @@ SUBJECTS = {
     "臨床微生物學": "exammicrobiog"
 }
 
+def normalize_answer(ans):
+    return ans.strip().replace('.', '').replace('．', '').upper().replace('Ｂ', 'B').replace('Ａ', 'A').replace('Ｃ', 'C').replace('Ｄ', 'D')
 
 def match_subject_name(input_name):
     best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
     return best_match[0] if best_match else None
-
 
 def load_question_bank(repo):
     api_url = f"https://api.github.com/repos/shaintane/{repo}/contents"
@@ -47,12 +48,10 @@ def load_question_bank(repo):
                 return requests.get(raw_url).json()
     return []
 
-
 def format_question(q, index, repo):
     image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
     base = f"第 {index+1} 題：{q['題目']}\n" + "\n".join(q['選項'])
     return base + (f"\n\n{image_url}" if image_url else "")
-
 
 def generate_explanation(question, student_answer):
     correct = question["正解"]
@@ -77,7 +76,6 @@ def generate_explanation(question, student_answer):
     except Exception:
         return None
 
-
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers["X-Line-Signature"]
@@ -87,7 +85,6 @@ def callback():
     except InvalidSignatureError:
         abort(400)
     return "OK"
-
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -107,7 +104,7 @@ def handle_message(event):
             "questions": selected,
             "current": 0,
             "answers": [],
-            "統計已回應": False
+            "解析次數": 0
         }
         first_q = selected[0]
         reply = format_question(first_q, 0, repo)
@@ -120,7 +117,7 @@ def handle_message(event):
         repo = session["repo"]
         if current < NUM_QUESTIONS:
             current_q = session["questions"][current]
-            selected = user_input.upper()
+            selected = normalize_answer(user_input)
             correct = current_q["正解"]
             is_correct = (selected == correct)
             session["answers"].append({
@@ -135,18 +132,29 @@ def handle_message(event):
                 next_q = session["questions"][session["current"]]
                 reply = format_question(next_q, session["current"], repo)
             else:
-                reply = "✅ 測驗結束，輸入『統計』查看結果或輸入『題號3』取得解析。"
+                answers = session["answers"]
+                wrong_answers = [ans for ans in answers if not ans.get("是否正確")]
+                total = len(answers)
+                correct_count = total - len(wrong_answers)
+                rate = round((correct_count / total) * 100, 1)
+                wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}） 正解 {w['正解']}" for w in wrong_answers])
+                summary = f"📩 測驗已完成\n共 {total} 題，正確 {correct_count} 題，正確率 {rate}%\n\n錯題如下：\n{wrong_list if wrong_answers else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
+                reply = summary
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
             return
 
         if user_input.startswith("題號"):
             try:
                 tid = int(user_input.replace("題號", "").strip())
+                if session["解析次數"] >= 3:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 你已達到本次測驗解析上限（3題）。"))
+                    return
                 q = next((q for q in session["questions"] if q["題號"] == tid), None)
                 a = next((a for a in session["answers"] if a["題號"] == tid), None)
                 if q and a:
                     explain = generate_explanation(q, a["作答"])
                     if explain:
+                        session["解析次數"] += 1
                         image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
                         reply = f"📘 題號 {tid} 解析：\n{explain}" + (f"\n\n🔗 圖片：{image_url}" if image_url else "")
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
@@ -156,17 +164,6 @@ def handle_message(event):
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 查無題號 {tid} 的紀錄。"))
             except:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入正確格式：題號3"))
-            return
-
-        if user_input in ["結果", "統計", "統計結果"] and not session.get("統計已回應"):
-            answers = session["answers"]
-            wrong_answers = [ans for ans in answers if not ans.get("是否正確")]
-            total = len(answers)
-            wrong_count = len(wrong_answers)
-            wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}） 正解 {w['正解']}" for w in wrong_answers])
-            summary = f"📩 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
-            session["統計已回應"] = True
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
             return
 
 if __name__ == "__main__":
