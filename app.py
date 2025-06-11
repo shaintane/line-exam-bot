@@ -153,6 +153,9 @@ def handle_message(event):
 {explain}" + (f"
 
 🔗 圖片：{image_url}" if image_url else "")
+{explain}" + (f"
+
+🔗 圖片：{image_url}" if image_url else "")
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
                     else:
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。"))
