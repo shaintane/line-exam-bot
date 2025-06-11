@@ -134,10 +134,10 @@ def handle_message(event):
     whitelist = load_whitelist()
 
     if user_id == DEV_USER_ID:
-    pass
+        pass
     elif user_id not in whitelist:
         if user_id not in registration_buffer:
-        registration_buffer[user_id] = []
+            registration_buffer[user_id] = []
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="🎓 歡迎使用國考 AI 助教系統！請依序輸入以下 5 項資料（每行一項）：\n1. 學校\n2. 姓名\n3. 學號\n4. 實習起始日 (YYYY-MM-DD)\n5. 實習結束日 (YYYY-MM-DD)\n\n✅ 系統會自動記錄您的 LINE ID，無需輸入！"))
         return
