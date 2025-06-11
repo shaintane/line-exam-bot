@@ -30,6 +30,15 @@ SUBJECTS = {
     "分子檢驗與顯微": "exammolecu",
     "生理與病理": "exampatho",
     "微生物與微生物學": "exammicrobiog"
+
+SUBJECT_ALIASES = {
+    "臨床血清免疫學": "血清免疫",
+    "臨床血液與血庫學": "血液與血庫",
+    "臨床生物化學": "生物化學",
+    "醫學分子檢驗與鏡檢學": "分子檢驗與顯微",
+    "臨床生理與病理學": "生理與病理",
+    "臨床微生物學": "微生物與微生物學"
+}
 }
 
 def match_subject_name(input_name):
@@ -91,7 +100,7 @@ def callback():
 # 發送快速回覆科目按鈕
 def send_subject_selection(event):
     quick_reply_items = [
-        QuickReplyButton(action=MessageAction(label=name, text=name))
+        QuickReplyButton(action=MessageAction(label=SUBJECT_ALIASES.get(name, name), text=name))
         for name in SUBJECTS.keys()
     ]
     line_bot_api.reply_message(
