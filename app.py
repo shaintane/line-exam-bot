@@ -19,7 +19,7 @@ handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
-NUM_QUESTIONS = 10
+NUM_QUESTIONS = 5
 
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
@@ -121,6 +121,9 @@ def handle_message(event):
         if current < NUM_QUESTIONS:
             current_q = session["questions"][current]
             selected = user_input.upper()
+            if selected not in ["A", "B", "C", "D"]:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請填入 A / B / C / D"))
+                return
             correct = current_q["正解"]
             is_correct = (selected == correct)
             session["answers"].append({
@@ -135,7 +138,21 @@ def handle_message(event):
                 next_q = session["questions"][session["current"]]
                 reply = format_question(next_q, session["current"], repo)
             else:
-                reply = "✅ 測驗結束，輸入『統計』查看結果或輸入『題號3』取得解析。"
+                answers = session["answers"]
+                wrong_answers = [ans for ans in answers if not ans.get("是否正確")]
+                total = len(answers)
+                wrong_count = len(wrong_answers)
+                wrong_list = "
+".join([f"題號 {w['題號']}（你選 {w['作答']}） 正解 {w['正解']}" for w in wrong_answers])
+                summary = f"📩 測驗已完成
+共 {total} 題，錯誤 {wrong_count} 題
+
+錯題如下：
+{wrong_list if wrong_count else '全部答對！'}
+
+💡 想查看解析請輸入：題號3"
+                session["統計已回應"] = True
+                reply = summary
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
             return
 
