@@ -45,9 +45,8 @@ def normalize_answer(ans):
     return ans.strip().replace('.', '').replace('．', '').upper().replace('Ｂ', 'B').replace('Ａ', 'A').replace('Ｃ', 'C').replace('Ｄ', 'D')
 
 def match_subject_name(input_name):
-    # 若命中 alias，優先轉換
-    if input_name in ALIAS:
-        input_name = ALIAS[input_name]
+    if input_name in ["微生物"]:
+        input_name = "臨床微生物學"
     best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
     return best_match[0] if best_match else None
 
