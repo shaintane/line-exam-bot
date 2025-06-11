@@ -134,24 +134,36 @@ def handle_message(event):
     whitelist = load_whitelist()
 
     if user_id == DEV_USER_ID:
-        pass
-    elif user_id not in whitelist:
-        if user_id not in registration_buffer:
-            registration_buffer[user_id] = []
+    pass
+elif user_id not in whitelist:
+    if user_id not in registration_buffer:
+        registration_buffer[user_id] = []
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(
+            text="🎓 歡迎使用國考 AI 助教系統！請依序輸入以下 5 項資料（每行一項）：\n1. 學校\n2. 姓名\n3. 學號\n4. 實習起始日 (YYYY-MM-DD)\n5. 實習結束日 (YYYY-MM-DD)\n\n✅ 系統會自動記錄您的 LINE ID，無需輸入！"))
+        return
+
+    # 🧠 處理一次性貼上五行的情況
+    lines = user_input.strip().split('\n')
+    if len(lines) == 5:
+        school, name, student_id, start_date, end_date = lines
+
+        if not all([school, name, student_id, start_date, end_date]):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(
-                text="🎓 歡迎使用國考 AI 助教系統！請依序輸入以下 6 項資料（每行一項）：\n1. 學校\n2. 姓名\n3. 學號\n4. LINE ID（可略過，將自動使用）\n5. 實習起始日 (YYYY-MM-DD)\n6. 實習結束日 (YYYY-MM-DD)"))
+                text="⚠️ 輸入資料不完整，請重新輸入 5 項完整資訊。"))
             return
-        registration_buffer[user_id].append(user_input)
-        if len(registration_buffer[user_id]) < 6:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(
-                text=f"✅ 已收到第 {len(registration_buffer[user_id])} 項，請輸入第 {len(registration_buffer[user_id]) + 1} 項："))
-            return
-        school, name, student_id, line_id_input, start_date, end_date = registration_buffer[user_id]
+
         if not is_valid_date(start_date) or not is_valid_date(end_date):
-            del registration_buffer[user_id]
             line_bot_api.reply_message(event.reply_token, TextSendMessage(
-                text="⚠️ 日期格式錯誤，請使用 YYYY-MM-DD 格式。請重新開始註冊流程。"))
+                text="⚠️ 日期格式錯誤，請使用 YYYY-MM-DD。\n請重新開始輸入資料。"))
             return
+
+        registration_buffer[user_id] = [school, name, student_id, start_date, end_date]
+    else:
+        registration_buffer[user_id].append(user_input)
+
+    # ✅ 若已收滿 5 項就寫入白名單
+    if len(registration_buffer[user_id]) == 5:
+        school, name, student_id, start_date, end_date = registration_buffer[user_id]
         whitelist[user_id] = {
             "school": school,
             "name": name,
@@ -165,12 +177,10 @@ def handle_message(event):
         del registration_buffer[user_id]
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 註冊完成，請輸入科目名稱開始測驗。"))
         return
-
-    if user_id != DEV_USER_ID:
-        user_info = whitelist.get(user_id)
-        if not is_user_active(user_info):
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 您的使用期限已到，請洽管理員。"))
-            return
+    else:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(
+            text=f"✅ 已收到第 {len(registration_buffer[user_id])} 項，請輸入第 {len(registration_buffer[user_id]) + 1} 項："))
+        return
 
 
     matched_subject = match_subject_name(user_input)
