@@ -20,7 +20,7 @@ handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
-NUM_QUESTIONS = 10
+NUM_QUESTIONS = 5
 
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
@@ -90,7 +90,7 @@ def handle_message(event):
     user_input = event.message.text.strip()
 
     # 多題 AI 解析觸發：解析 3 或 解析 2,5,7
-    if user_input.startswith("解析"):
+    if user_input.startswith("題號"):
         session = user_sessions.get(user_id)
         if not session:
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 尚未啟動測驗，請先完成一次測驗後再查詢解析。"))
@@ -217,7 +217,13 @@ def handle_message(event):
         next_q = session["questions"][session["current"]]
         reply = format_question(next_q, session["current"], repo)
     else:
-        reply = "🎉 測驗結束，請輸入『結果』查看統計與解析。"
+        total = len(session["answers"])
+        wrong_answers = session["錯題"]
+        wrong_count = len(wrong_answers)
+        wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
+        summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3 或 解析 2,5,7"
+        session[\"統計已回應\"] = True
+        reply = summary
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
