@@ -20,7 +20,21 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 user_sessions = {}
 NUM_QUESTIONS = 10
-REPO = "examimmun"
+
+# 科目與對應 repo
+SUBJECTS = {
+    "臨床血清免疫學": "examimmun",
+    "臨床血液與血庫學": "exmablood",
+    "臨床生物化學": "exambiochemicy",
+    "醫學分子檢驗與鏡檢學": "exammolecu",
+    "臨床生理與病理學": "exampatho",
+    "臨床微生物學": "exammicrobiog"
+}
+
+
+def match_subject_name(input_name):
+    best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
+    return best_match[0] if best_match else None
 
 
 def load_question_bank(repo):
@@ -35,8 +49,8 @@ def load_question_bank(repo):
     return []
 
 
-def format_question(q, index):
-    image_url = f"https://raw.githubusercontent.com/shaintane/{REPO}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
+def format_question(q, index, repo):
+    image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
     base = f"第 {index+1} 題：{q['題目']}\n" + "\n".join(q['選項'])
     return base + (f"\n\n{image_url}" if image_url else "")
 
@@ -81,25 +95,30 @@ def handle_message(event):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
-    if user_input == "測驗":
-        questions = load_question_bank(REPO)
+    matched_subject = match_subject_name(user_input)
+    if matched_subject:
+        repo = SUBJECTS[matched_subject]
+        questions = load_question_bank(repo)
         selected = random.sample(questions, NUM_QUESTIONS)
         for idx, q in enumerate(selected):
             q["題號"] = idx + 1
         user_sessions[user_id] = {
+            "subject": matched_subject,
+            "repo": repo,
             "questions": selected,
             "current": 0,
             "answers": [],
             "統計已回應": False
         }
         first_q = selected[0]
-        reply = format_question(first_q, 0)
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 開始測驗：\n" + reply))
+        reply = format_question(first_q, 0, repo)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已選擇『{matched_subject}』科目，開始測驗：\n" + reply))
         return
 
     if user_id in user_sessions:
         session = user_sessions[user_id]
         current = session["current"]
+        repo = session["repo"]
         if current < NUM_QUESTIONS:
             current_q = session["questions"][current]
             selected = user_input.upper()
@@ -115,7 +134,7 @@ def handle_message(event):
             session["current"] += 1
             if session["current"] < NUM_QUESTIONS:
                 next_q = session["questions"][session["current"]]
-                reply = format_question(next_q, session["current"])
+                reply = format_question(next_q, session["current"], repo)
             else:
                 reply = "✅ 測驗結束，輸入『統計』查看結果或輸入『題號3』取得解析。"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
@@ -137,7 +156,7 @@ def handle_message(event):
                 if q and a:
                     explain = generate_explanation(q, a["作答"])
                     if explain:
-                        image_url = f"https://raw.githubusercontent.com/shaintane/{REPO}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
+                        image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
                         reply = f"📘 題號 {tid} 解析：\n{explain}" + (f"\n\n🔗 圖片：{image_url}" if image_url else "")
                         reply_texts.append(reply)
                     else:
