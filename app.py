@@ -140,31 +140,26 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
             return
 
-        if user_input.startswith("題號") or user_input.startswith("解析"):
-            ids = []
-            if user_input.startswith("題號"):
-                ids = [int(user_input.replace("題號", "").strip())]
-            else:
-                try:
-                    ids = [int(i.strip()) for i in user_input.replace("解析", "").split(",") if i.strip().isdigit()]
-                except:
-                    pass
-            reply_texts = []
-            for tid in ids[:3]:
+        if user_input.startswith("題號"):
+            try:
+                tid = int(user_input.replace("題號", "").strip())
                 q = next((q for q in session["questions"] if q["題號"] == tid), None)
                 a = next((a for a in session["answers"] if a["題號"] == tid), None)
                 if q and a:
                     explain = generate_explanation(q, a["作答"])
                     if explain:
                         image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
-                        reply = f"📘 題號 {tid} 解析：\n{explain}" + (f"\n\n🔗 圖片：{image_url}" if image_url else "")
-                        reply_texts.append(reply)
+                        reply = f"📘 題號 {tid} 解析：
+{explain}" + (f"
+
+🔗 圖片：{image_url}" if image_url else "")
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
                     else:
-                        reply_texts.append(f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。")
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。"))
                 else:
-                    reply_texts.append(f"⚠️ 查無題號 {tid} 的紀錄。")
-            for r in reply_texts:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=r))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 查無題號 {tid} 的紀錄。"))
+            except:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入正確格式：題號3"))
             return
 
         if user_input in ["結果", "統計", "統計結果"] and not session.get("統計已回應"):
