@@ -21,7 +21,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 user_sessions = {}
 NUM_QUESTIONS = 10
 
-# 科目與對應 repo
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
     "臨床血液與血庫學": "exmablood",
@@ -149,13 +148,7 @@ def handle_message(event):
                     explain = generate_explanation(q, a["作答"])
                     if explain:
                         image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""
-                        reply = f"📘 題號 {tid} 解析：
-{explain}" + (f"
-
-🔗 圖片：{image_url}" if image_url else "")
-{explain}" + (f"
-
-🔗 圖片：{image_url}" if image_url else "")
+                        reply = f"📘 題號 {tid} 解析：\n{explain}" + (f"\n\n🔗 圖片：{image_url}" if image_url else "")
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
                     else:
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。"))
@@ -171,7 +164,7 @@ def handle_message(event):
             total = len(answers)
             wrong_count = len(wrong_answers)
             wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}） 正解 {w['正解']}" for w in wrong_answers])
-            summary = f"📩 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count else '全部答對！'}\n\n💡 想查看解析請輸入：題號3 或 解析 2,5,7"
+            summary = f"📩 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count else '全部答對！'}\n\n💡 想查看解析請輸入：題號3"
             session["統計已回應"] = True
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
             return
