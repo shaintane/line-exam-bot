@@ -134,8 +134,8 @@ def handle_message(event):
     whitelist = load_whitelist()
 
     if user_id == DEV_USER_ID:
-    pass
-elif user_id not in whitelist:
+       pass
+    elif user_id not in whitelist:
     if user_id not in registration_buffer:
         registration_buffer[user_id] = []
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
