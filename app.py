@@ -118,6 +118,9 @@ def handle_message(event):
         if current < NUM_QUESTIONS:
             current_q = session["questions"][current]
             selected = normalize_answer(user_input)
+            if selected not in ['A', 'B', 'C', 'D']:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請填入 A / B / C / D 作為答案。"))
+                return
             correct = current_q["正解"]
             is_correct = (selected == correct)
             session["answers"].append({
