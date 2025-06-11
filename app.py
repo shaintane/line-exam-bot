@@ -27,7 +27,7 @@ SUBJECTS = {
     "臨床生物化學": "exambiochemicy",
     "醫學分子檢驗與鏡檢學": "exammolecu",
     "臨床生理與病理學": "exampatho",
-    "臨床微生物學": "exammicrobiog"
+    "臨床微生物學": "exammicrbiog"
 }
 
 ALIAS = {
