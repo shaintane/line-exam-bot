@@ -31,10 +31,24 @@ SUBJECTS = {
     "臨床微生物學": "exammicrobiog"
 }
 
+ALIASES = {
+    "微生物": "臨床微生物學",
+    "病毒學": "臨床微生物學",
+    "微生物學": "臨床微生物學",
+    "血清免疫": "臨床血清免疫學",
+    "血液與血庫": "臨床血液與血庫學",
+    "生物化學": "臨床生物化學",
+    "分子檢驗": "醫學分子檢驗與鏡檢學",
+    "顯微檢查": "醫學分子檢驗與鏡檢學",
+    "生理與病理": "臨床生理與病理學"
+}
+
 def match_subject_name(input_name):
+    input_name = input_name.strip()
+    if input_name in ALIASES:
+        input_name = ALIASES[input_name]
     best_match = difflib.get_close_matches(input_name, SUBJECTS.keys(), n=1, cutoff=0.4)
     return best_match[0] if best_match else None
-
 def load_question_bank(repo):
     api_url = f"https://api.github.com/repos/shaintane/{repo}/contents"
     res = requests.get(api_url)
@@ -222,7 +236,7 @@ def handle_message(event):
         wrong_count = len(wrong_answers)
         wrong_list = "\n".join([f"題號 {w['題號']}（你選 {w['作答']}）正解 {w['正解']}" for w in wrong_answers])
         summary = f"📝 測驗已完成\n共 {total} 題，錯誤 {wrong_count} 題\n\n錯題如下：\n{wrong_list if wrong_count > 0 else '全部答對！'}\n\n💡 想查看解析請輸入：題號3 或 解析 2,5,7"
-        session["統計已回應"] = True
+        session[\"統計已回應\"] = True
         reply = summary
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
