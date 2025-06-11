@@ -1,4 +1,4 @@
-import os
+image_url = f"https://raw.githubusercontent.com/shaintane/{repo}/main/{q['圖片連結']}" if q.get("圖片連結") else ""import os
 import json
 import random
 import difflib
