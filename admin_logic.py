@@ -34,7 +34,7 @@ def handle_admin_commands(user_input, user_id, line_bot_api, event):
         else:
             print("✅ 已存在 whitelist")
         try:
-            line_bot_api.push_message(event, TextSendMessage(text="✅ 管理者登入成功。"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="✅ 管理者登入成功。"))
         except Exception as e:
             print(f"❌ 傳送回覆失敗：{str(e)}")
         return True
@@ -52,9 +52,9 @@ def handle_admin_commands(user_input, user_id, line_bot_api, event):
                 "role": "intern"
             }
             save_whitelist(whitelist)
-            line_bot_api.push_message(event, TextSendMessage(text=f"✅ 已手動新增 {name} 進入白名單。"))
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已手動新增 {name} 進入白名單。"))
         except:
-            line_bot_api.push_message(event, TextSendMessage(text="⚠️ 輸入格式錯誤，請使用 input 學校 姓名 學號 起始日 結束日"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 輸入格式錯誤，請使用 input 學校 姓名 學號 起始日 結束日"))
         return True
 
     if user_input.startswith("delet") and whitelist.get(user_id, {}).get("role") == "admin":
@@ -63,11 +63,11 @@ def handle_admin_commands(user_input, user_id, line_bot_api, event):
             if student_id in whitelist:
                 del whitelist[student_id]
                 save_whitelist(whitelist)
-                line_bot_api.push_message(event, TextSendMessage(text=f"🗑️ 已移除 {student_id}。"))
+                line_bot_api.push_message(user_id, TextSendMessage(text=f"🗑️ 已移除 {student_id}。"))
             else:
-                line_bot_api.push_message(event, TextSendMessage(text=f"⚠️ 查無 {student_id} 於白名單內。"))
+                line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 查無 {student_id} 於白名單內。"))
         except:
-            line_bot_api.push_message(event, TextSendMessage(text="⚠️ 請輸入格式：delet 學號"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請輸入格式：delet 學號"))
         return True
 
     return False
