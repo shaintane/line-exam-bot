@@ -5,72 +5,99 @@ import json
 import os
 from datetime import datetime
 
-PENDING_FILE = "pending_register.json"
 WHITELIST_FILE = "whitelist.json"
+PENDING_FILE = "pending_register.json"
+DEVELOPER_LINE_ID = "shaintane"
 
-def load_json(file_path):
-    if not os.path.exists(file_path):
+def load_whitelist():
+    if not os.path.exists(WHITELIST_FILE):
         return {}
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_json(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as f:
+def load_pending():
+    if not os.path.exists(PENDING_FILE):
+        return {}
+    with open(PENDING_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_pending(data):
+    with open(PENDING_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 def process_message(event, line_bot_api, client, user_sessions, registration_buffer):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
+    today = datetime.today().strftime("%Y-%m-%d")
 
-    # ✅ 管理者指令優先處理
+    # 測試者 shaintane 可直接繞過
+    if user_id == DEVELOPER_LINE_ID:
+        if user_input == "測試":
+            pending = load_pending()
+            if user_id not in pending:
+                pending[user_id] = {
+                    "school": "",
+                    "name": "",
+                    "student_id": "",
+                    "start_date": "",
+                    "end_date": "",
+                    "line_id": user_id
+                }
+                save_pending(pending)
+            line_bot_api.push_message(user_id, TextSendMessage(
+                text="👋 歡迎加入！請輸入：學校 姓名 學號 起始日 結束日（格式如：OO大學 王小明 123456 2025/06/01 2025/07/31）"))
+            return
+
+    # 管理者邏輯
     if handle_admin_commands(user_input, user_id, line_bot_api):
         return
 
-    # ✅ 模擬 shaintane 輸入「測試」作為新進學生測試流程
-    if user_input == "測試" and user_id == "shaintane":
-        pending = load_json(PENDING_FILE)
-        pending[user_id] = {
-            "name": "測試使用者",
-            "student_id": "000000",
-            "school": "測試學院",
-            "start_date": datetime.today().strftime("%Y-%m-%d"),
-            "end_date": "2099-12-31",
-            "line_id": user_id
-        }
-        save_json(PENDING_FILE, pending)
-        line_bot_api.push_message(user_id, TextSendMessage(
-            text="✅ 已模擬加入 pending 區，等待審核通過。"))
-        return
-
-    # ✅ 學生填寫資料（自動寫入 pending 區）
-    if "/" in user_input and user_input.count("/") == 4:
-        try:
-            name, student_id, school, start_date, end_date = user_input.split("/")
-            pending = load_json(PENDING_FILE)
+    # 白名單驗證
+    whitelist = load_whitelist()
+    user_data = whitelist.get(user_id)
+    if not user_data:
+        pending = load_pending()
+        if user_id not in pending:
             pending[user_id] = {
-                "name": name.strip(),
-                "student_id": student_id.strip(),
-                "school": school.strip(),
-                "start_date": start_date.strip(),
-                "end_date": end_date.strip(),
+                "school": "",
+                "name": "",
+                "student_id": "",
+                "start_date": "",
+                "end_date": "",
                 "line_id": user_id
             }
-            save_json(PENDING_FILE, pending)
+            save_pending(pending)
             line_bot_api.push_message(user_id, TextSendMessage(
-                text="📥 資料已送出，請等待管理者審核。審核通過後可進入測驗系統。"))
-        except:
+                text="👋 歡迎使用本系統，尚未完成註冊。\n請輸入：學校 姓名 學號 起始日 結束日（例如：OO大學 王小明 123456 2025/06/01 2025/07/31）"))
+        elif all(pending[user_id].values()):
             line_bot_api.push_message(user_id, TextSendMessage(
-                text="⚠️ 請輸入格式：姓名/學號/學校/起始日/結束日\n範例：王大明/112345/國立醫學大學/2025-06-01/2025-08-31"))
+                text="✅ 資料已提交，請等待管理者審核。"))
+        else:
+            try:
+                school, name, student_id, start_date, end_date = user_input.split()
+                pending[user_id] = {
+                    "school": school,
+                    "name": name,
+                    "student_id": student_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "line_id": user_id
+                }
+                save_pending(pending)
+                line_bot_api.push_message(user_id, TextSendMessage(
+                    text="📩 資料已接收，請等待管理者審核通過後使用系統。"))
+            except:
+                line_bot_api.push_message(user_id, TextSendMessage(
+                    text="⚠️ 請依正確格式輸入：學校 姓名 學號 起始日 結束日（例如：OO大學 王小明 123456 2025/06/01 2025/07/31）"))
         return
 
-    # ✅ 檢查白名單權限（如不在白名單則不允許進入測驗）
-    whitelist = load_json(WHITELIST_FILE)
-    today = datetime.today().strftime("%Y-%m-%d")
-
-    if user_id not in whitelist or not (whitelist[user_id]["start_date"] <= today <= whitelist[user_id]["end_date"]):
+    # 權限期間驗證
+    start = user_data.get("start_date")
+    end = user_data.get("end_date")
+    if not (start <= today <= end):
         line_bot_api.push_message(user_id, TextSendMessage(
-            text="⛔️ 尚未被審核或使用權限已過期。\n請確認是否已填寫資料並等待管理者審核通過。"))
+            text="⛔ 尚未被審核或使用權限已過期。\n請確認是否已填寫資料並等待管理者審核通過。"))
         return
 
-    # ✅ 通過白名單則進入測驗主流程
+    # 通過白名單後啟用測驗流程
     handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_sessions, registration_buffer)
