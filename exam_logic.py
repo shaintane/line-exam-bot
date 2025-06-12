@@ -53,7 +53,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
     }
     NUM_QUESTIONS = 5
 
-    if user_id not in user_sessions:
+    if user_id not in user_sessions or user_sessions[user_id].get("completed"):
         subject = match_subject_name(user_input, ALIAS, SUBJECTS)
         if subject:
             repo = SUBJECTS[subject]
@@ -70,7 +70,8 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
                 "questions": questions,
                 "current": 0,
                 "answers": [],
-                "解析次數": 0
+                "解析次數": 0,
+                "completed": False
             }
             q = questions[0]
             message = format_question(q, 0, repo)
@@ -130,10 +131,9 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
                 summary += "錯題如下：\n" if wrong else "全部答對！"
                 summary += "\n".join([f"題號 {w['題號']}（你選 {w['作答']}） 正解 {w['正解']}" for w in wrong])
                 summary += "\n\n💡 想查看解析請輸入：題號3"
-                summary += "\n\n🔁 想選擇其他科目請輸入『微生物』或『免疫』等關鍵字。"
-
+                summary += "\n\n📘 想選擇其他科目請輸入『微生物』或『免疫』等關鍵字。"
                 line_bot_api.push_message(user_id, TextSendMessage(text=summary))
-                del user_sessions[user_id]
+                session["completed"] = True
             return
 
 def generate_explanation(client, question, student_answer):
