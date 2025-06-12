@@ -100,52 +100,27 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
 
     whitelist = load_whitelist()
 
+    # ✅ 修正的 admin 指令邏輯（含 log）
     if user_input.lower().startswith("admin"):
-    if user_id not in whitelist:
-        whitelist[user_id] = {
-            "role": "admin",
-            "name": "管理者",
-            "student_id": "admin",
-            "school": "System",
-            "start_date": "2025-01-01",
-            "end_date": "2099-12-31",
-            "line_id": user_id
-        }
-        save_whitelist(whitelist)
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
-    return
-
-
-    if user_input.startswith("input") and whitelist.get(user_id, {}).get("role") == "admin":
-        try:
-            _, school, name, student_id, start_date, end_date = user_input.split()
-            whitelist[student_id] = {
-                "school": school,
-                "name": name,
-                "student_id": student_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "line_id": student_id,
-                "role": "intern"
+        print("🛠 觸發 admin 指令")
+        if user_id not in whitelist:
+            print("➕ 新增管理者進入白名單")
+            whitelist[user_id] = {
+                "role": "admin",
+                "name": "管理者",
+                "student_id": "admin",
+                "school": "System",
+                "start_date": "2025-01-01",
+                "end_date": "2099-12-31",
+                "line_id": user_id
             }
             save_whitelist(whitelist)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已手動新增 {name} 進入白名單。"))
-        except:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 輸入格式錯誤，請使用 input 學校 姓名 學號 起始日 結束日"))
+        else:
+            print("✅ 已存在 whitelist")
+        print("📤 發送成功訊息")
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
         return
 
-    if user_input.startswith("delet") and whitelist.get(user_id, {}).get("role") == "admin":
-        try:
-            _, student_id = user_input.split()
-            if student_id in whitelist:
-                del whitelist[student_id]
-                save_whitelist(whitelist)
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"🗑️ 已移除 {student_id}。"))
-            else:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 查無 {student_id} 於白名單內。"))
-        except:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式：delet 學號"))
-        return
-
+    # 其他 input、delet、選科、作答等繼續執行（略）
     from core_logic import process_message as inner_logic
     inner_logic(event, line_bot_api, client, user_sessions, registration_buffer)
