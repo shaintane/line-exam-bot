@@ -28,19 +28,22 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
-        # 預先快速回應
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="✅ 收到訊息，系統正在處理中...")
-        )
-
-        # 呼叫邏輯主程式（記得補齊所有參數）
         from handlers import process_message
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # 僅在 DEBUG_MODE == "true" 時顯示初始回覆
+        if os.getenv("DEBUG_MODE", "false").lower() == "true":
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="✅ 收到訊息，系統正在處理中...")
+            )
+
+        # 處理邏輯訊息
         process_message(event, line_bot_api, client, user_sessions, registration_buffer)
 
     except Exception as e:
+        # 發生錯誤時仍需回覆
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=f"⚠️ 系統錯誤：{str(e)}")
