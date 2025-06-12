@@ -1,4 +1,3 @@
-
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -29,9 +28,11 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     try:
-        # 預先快速回應，避免 webhook timeout
-        line_bot_api.reply_message(
-            event.reply_token,
+        user_id = event.source.user_id
+
+        # 預先快速回應（改用 push_message，避免 webhook token 過期）
+        line_bot_api.push_message(
+            user_id,
             TextSendMessage(text="✅ 收到訊息，系統正在處理中...")
         )
 
@@ -40,8 +41,9 @@ def handle_message(event):
         process_message(event, line_bot_api, user_sessions, registration_buffer)
 
     except Exception as e:
-        line_bot_api.reply_message(
-            event.reply_token,
+        user_id = event.source.user_id
+        line_bot_api.push_message(
+            user_id,
             TextSendMessage(text=f"⚠️ 系統錯誤：{str(e)}")
         )
 
