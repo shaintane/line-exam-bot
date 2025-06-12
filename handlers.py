@@ -1,4 +1,3 @@
-
 from linebot.models import TextSendMessage
 from datetime import datetime
 import difflib
@@ -64,6 +63,90 @@ def generate_explanation(client, question, student_answer):
     except:
         return None
 
-def process_message(event, line_bot_api, client, user_sessions, registration_buffer):
-    # 本函式內完整邏輯已寫入 Canvas，如需同步產出副本我可補全
-    pass
+def process_message(event, line_bot_api, user_sessions, registration_buffer):
+    user_id = event.source.user_id
+    user_input = event.message.text.strip()
+    DEV_USER_ID = "shaintane"
+    WHITELIST_FILE = "whitelist.json"
+    SUBJECTS = {
+        "臨床血清免疫學": "examimmun",
+        "臨床血液與血庫學": "exmablood",
+        "臨床生物化學": "exambiochemicy",
+        "醫學分子檢驗與鏡檢學": "exammolecu",
+        "臨床生理與病理學": "exampatho",
+        "臨床微生物學": "exammicrbiog"
+    }
+    ALIAS = {
+        "微生物": "臨床微生物學",
+        "微生": "臨床微生物學",
+        "血庫": "臨床血液與血庫學",
+        "血液": "臨床血液與血庫學",
+        "分子": "醫學分子檢驗與鏡檢學",
+        "免疫": "臨床血清免疫學",
+        "生化": "臨床生物化學",
+        "病理": "臨床生理與病理學"
+    }
+    NUM_QUESTIONS = 5
+
+    def load_whitelist():
+        if not os.path.exists(WHITELIST_FILE):
+            return {}
+        with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_whitelist(data):
+        with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    whitelist = load_whitelist()
+
+    # Admin command recognition
+    if user_input.lower().startswith("admin") and user_id not in whitelist:
+        whitelist[user_id] = {
+            "role": "admin",
+            "name": "管理者",
+            "student_id": "admin",
+            "school": "System",
+            "start_date": "2025-01-01",
+            "end_date": "2099-12-31",
+            "line_id": user_id
+        }
+        save_whitelist(whitelist)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
+        return
+
+    if user_input.startswith("input") and whitelist.get(user_id, {}).get("role") == "admin":
+        try:
+            _, school, name, student_id, start_date, end_date = user_input.split()
+            whitelist[student_id] = {
+                "school": school,
+                "name": name,
+                "student_id": student_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "line_id": student_id,
+                "role": "intern"
+            }
+            save_whitelist(whitelist)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已手動新增 {name} 進入白名單。"))
+        except:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 輸入格式錯誤，請使用 input 學校 姓名 學號 起始日 結束日"))
+        return
+
+    if user_input.startswith("delet") and whitelist.get(user_id, {}).get("role") == "admin":
+        try:
+            _, student_id = user_input.split()
+            if student_id in whitelist:
+                del whitelist[student_id]
+                save_whitelist(whitelist)
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"🗑️ 已移除 {student_id}。"))
+            else:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 查無 {student_id} 於白名單內。"))
+        except:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入格式：delet 學號"))
+        return
+
+    from handlers import process_message as main_logic
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    main_logic(event, line_bot_api, client, user_sessions, registration_buffer)
