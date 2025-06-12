@@ -122,5 +122,4 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
         return
 
     # 其他 input、delet、選科、作答等繼續執行（略）
-    from core_logic import process_message as inner_logic
-    inner_logic(event, line_bot_api, client, user_sessions, registration_buffer)
+    
