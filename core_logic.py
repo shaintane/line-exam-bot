@@ -115,6 +115,7 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
     return
 
+
     if user_input.startswith("input") and whitelist.get(user_id, {}).get("role") == "admin":
         try:
             _, school, name, student_id, start_date, end_date = user_input.split()
