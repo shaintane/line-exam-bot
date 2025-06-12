@@ -59,7 +59,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             repo = SUBJECTS[subject]
             question_bank = load_question_bank(repo)
             if not question_bank:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 題庫載入失敗"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 題庫載入失敗"))
                 return
             import random
             questions = random.sample(question_bank, min(NUM_QUESTIONS, len(question_bank)))
@@ -75,7 +75,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             }
             q = questions[0]
             message = format_question(q, 0, repo)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已選擇『{subject}』科目，開始測驗：
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已選擇『{subject}』科目，開始測驗：
 {message}"))
             return
 
@@ -86,7 +86,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             current_idx = session["current"]
             current_q = session["questions"][current_idx]
             if user_input_normalized not in ['A', 'B', 'C', 'D']:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請填入 A / B / C / D 作為答案。"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請填入 A / B / C / D 作為答案。"))
                 return
             correct = normalize_answer(current_q["正解"])
             is_correct = (user_input_normalized == correct)
@@ -101,7 +101,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             if session["current"] < NUM_QUESTIONS:
                 next_q = session["questions"][session["current"]]
                 reply = format_question(next_q, session["current"], session["repo"])
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                line_bot_api.push_message(user_id, TextSendMessage(text=reply))
             else:
                 answers = session["answers"]
                 wrong = [a for a in answers if not a["是否正確"]]
@@ -121,14 +121,14 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
                 summary += "
 
 💡 想查看解析請輸入：題號3"
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
+                line_bot_api.push_message(user_id, TextSendMessage(text=summary))
             return
 
         if user_input.startswith("題號"):
             try:
                 tid = int(user_input.replace("題號", "").strip())
                 if session["解析次數"] >= 3:
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 你已達到本次測驗解析上限（3題）。"))
+                    line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 你已達到本次測驗解析上限（3題）。"))
                     return
                 q = next((q for q in session["questions"] if q["題號"] == tid), None)
                 a = next((a for a in session["answers"] if a["題號"] == tid), None)
@@ -142,13 +142,13 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
 {explanation}" + (f"
 
 🔗 圖片：{image_url}" if image_url else "")
-                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                        line_bot_api.push_message(user_id, TextSendMessage(text=reply))
                     else:
-                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。"))
+                        line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 題號 {tid}：目前無法提供解析，請稍後再試。"))
                 else:
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 查無題號 {tid} 的紀錄。"))
+                    line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 查無題號 {tid} 的紀錄。"))
             except:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請輸入正確格式：題號3"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請輸入正確格式：題號3"))
             return
             import random
             questions = random.sample(question_bank, min(NUM_QUESTIONS, len(question_bank)))
@@ -161,7 +161,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             }
             q = questions[0]
             message = format_question(q, 0, repo)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+            line_bot_api.push_message(user_id, TextSendMessage(text=message))
             return
 
     if user_id in user_sessions:
@@ -173,7 +173,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             if session["current"] < len(session["questions"]):
                 next_q = session["questions"][session["current"]]
                 msg = format_question(next_q, session["current"], session["repo"])
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+                line_bot_api.push_message(user_id, TextSendMessage(text=msg))
             else:
                 reply = f"📊 測驗完成！共 {len(session['questions'])} 題。
 "
@@ -188,7 +188,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
                         wrong_indexes.append(i)
                 reply += f"✅ 答對：{correct} 題
 ❌ 答錯：{len(session['questions']) - correct} 題"
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                line_bot_api.push_message(user_id, TextSendMessage(text=reply))
 
                 # 錯題解析
                 for i in wrong_indexes:
@@ -200,7 +200,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
 {explanation}"
                     else:
                         text = f"第{i+1}題解析無法生成"
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text))
+                    line_bot_api.push_message(user_id, TextSendMessage(text=text))
 
                 del user_sessions[user_id]
             return
@@ -215,7 +215,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             }
             q = questions[0]
             message = format_question(q, 0, repo)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+            line_bot_api.push_message(user_id, TextSendMessage(text=message))
             return
 
     if user_id in user_sessions:
@@ -227,7 +227,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
             if session["current"] < len(session["questions"]):
                 next_q = session["questions"][session["current"]]
                 msg = format_question(next_q, session["current"], session["repo"])
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+                line_bot_api.push_message(user_id, TextSendMessage(text=msg))
             else:
                 reply = f"📊 測驗完成！共 {len(session['questions'])} 題。\n"
                 correct = 0
@@ -237,7 +237,7 @@ def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_ses
                     if student_ans == correct_ans:
                         correct += 1
                 reply += f"✅ 答對：{correct} 題\n❌ 答錯：{len(session['questions']) - correct} 題"
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                line_bot_api.push_message(user_id, TextSendMessage(text=reply))
                 del user_sessions[user_id]
             return
 
