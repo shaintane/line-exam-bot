@@ -14,7 +14,7 @@ def save_whitelist(data):
     with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def handle_admin_commands(user_input, user_id, line_bot_api, event):
+def handle_admin_commands(user_input, user_id, line_bot_api):
     whitelist = load_whitelist()
 
     if user_input.lower().startswith("admin"):
