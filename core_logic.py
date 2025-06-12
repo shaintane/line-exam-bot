@@ -100,7 +100,8 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
 
     whitelist = load_whitelist()
 
-    if user_input.lower().startswith("admin") and user_id not in whitelist:
+    if user_input.lower().startswith("admin"):
+    if user_id not in whitelist:
         whitelist[user_id] = {
             "role": "admin",
             "name": "管理者",
@@ -111,8 +112,8 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
             "line_id": user_id
         }
         save_whitelist(whitelist)
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
-        return
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 管理者登入成功。"))
+    return
 
     if user_input.startswith("input") and whitelist.get(user_id, {}).get("role") == "admin":
         try:
