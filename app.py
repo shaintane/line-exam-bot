@@ -129,9 +129,12 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_id = event.source.user_id
-    user_input = event.message.text.strip()
-    whitelist = load_whitelist()
+    try:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 收到訊息，系統正在處理中..."))
+        from handlers import process_message
+        process_message(event, line_bot_api, client, user_sessions, registration_buffer)
+    except Exception as e:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"⚠️ 系統錯誤：{str(e)}"))
 
     if user_id == DEV_USER_ID:
         pass
