@@ -23,7 +23,7 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
     user_input = event.message.text.strip()
 
     # ✅ 管理者指令優先處理
-    if handle_admin_commands(user_input, user_id, line_bot_api, event):
+    if handle_admin_commands(user_input, user_id, line_bot_api):
         return
 
     # ✅ 模擬 shaintane 輸入「測試」作為新進學生測試流程
