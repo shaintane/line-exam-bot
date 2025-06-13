@@ -49,7 +49,7 @@ def process_message(event, line_bot_api, client, user_sessions, registration_buf
             return
 
     # 管理者邏輯
-    if handle_admin_commands(user_input, user_id, line_bot_api):
+    if handle_admin_commands(user_input, user_id, line_bot_api, registration_buffer):
         return
 
     # 白名單驗證
