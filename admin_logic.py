@@ -1,111 +1,137 @@
-# ✅ admin_logic.py 整合模擬新使用者與正式新使用者流程
-from linebot.models import TextSendMessage
 import json
-import os
+from datetime import datetime
+from linebot.models import TextSendMessage
 
 WHITELIST_FILE = "whitelist.json"
 PENDING_FILE = "pending_register.json"
+DEVELOPER_ID = "shaintane"
 
-def load_whitelist():
-    if not os.path.exists(WHITELIST_FILE):
+def load_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
         return {}
-    with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
 
-def save_whitelist(data):
-    with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def load_pending_register():
-    if not os.path.exists(PENDING_FILE):
-        return {}
-    with open(PENDING_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_pending_register(data):
-    with open(PENDING_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def is_admin(user_id):
+    return user_id == DEVELOPER_ID
 
 def handle_admin_commands(user_input, user_id, line_bot_api, registration_buffer):
-    whitelist = load_whitelist()
-    pending = load_pending_register()
+    user_input = user_input.strip()
 
-    # ✅ 測試開發者模擬觸發新使用者進入
-    if user_input == "測試" and user_id == "shaintane":
+    # 模擬新使用者進入測試（限開發者）
+    if user_input == "測試" and user_id == DEVELOPER_ID:
+        welcome = (
+            "👋 歡迎加入國考輔導系統！\n"
+            "請依下列格式輸入以完成註冊：\n\n"
+            "格式：學校 姓名 學號 起始日 結束日\n"
+            "範例：國立醫學大學 王小明 123456\n"
+            "2025-06-01 2025-09-30"
+        )
+        line_bot_api.push_message(user_id, TextSendMessage(text=welcome))
         registration_buffer[user_id] = "awaiting_info"
-        line_bot_api.push_message(user_id, TextSendMessage(
-            text="🧪 測試模式啟動：請依格式輸入資料\n學校 姓名 學號 起始日 結束日"
-        ))
         return True
 
-    # ✅ 指令：顯示 pending 名單
-    if user_input == "show pending" and whitelist.get(user_id, {}).get("role") == "admin":
-        if pending:
-            summary = [f"{v['name']} | {k}" for k, v in pending.items()]
-            msg = "📋 尚待審核名單：\n" + "\n".join(summary)
-        else:
-            msg = "📭 目前無待審核名單。"
-        line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-        return True
-
-    # ✅ 指令：顯示 whitelist
-    if user_input == "show whitelist" and whitelist.get(user_id, {}).get("role") == "admin":
-        msg = "📋 白名單使用者：\n" + "\n".join([f"{v['name']} | {k}" for k, v in whitelist.items()])
-        line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-        return True
-
-    # ✅ 指令：核准使用者
-    if user_input.startswith("approve") and whitelist.get(user_id, {}).get("role") == "admin":
+    # 使用者註冊輸入資訊寫入 pending_register.json
+    if user_id in registration_buffer:
         try:
-            _, target_id = user_input.split()
-            if target_id in pending:
-                whitelist[target_id] = pending[target_id]
-                save_whitelist(whitelist)
-                del pending[target_id]
-                save_pending_register(pending)
-                line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已成功審核並加入白名單。"))
-            else:
-                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 查無此使用者於待審核區。"))
-        except:
-            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請輸入格式：approve LINE_ID"))
-        return True
-
-    # ✅ 指令：手動 input
-    if user_input.startswith("input") and whitelist.get(user_id, {}).get("role") == "admin":
-        try:
-            _, school, name, student_id, start, end, target_id = user_input.split()
-            whitelist[target_id] = {
+            parts = user_input.strip().split()
+            if len(parts) != 5:
+                raise ValueError
+            school, name, student_id, start_date, end_date = parts
+            data = load_json(PENDING_FILE)
+            data[user_id] = {
                 "school": school,
                 "name": name,
                 "student_id": student_id,
-                "start_date": start,
-                "end_date": end,
-                "line_id": target_id,
-                "role": "intern"
+                "start_date": start_date,
+                "end_date": end_date,
+                "line_id": user_id
             }
-            save_whitelist(whitelist)
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已手動新增 {name} 至白名單。"))
+            save_json(PENDING_FILE, data)
+            del registration_buffer[user_id]
+            line_bot_api.push_message(user_id, TextSendMessage(text="✅ 資料已送出，請等待管理者審核。"))
         except:
-            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請使用格式：input 學校 姓名 學號 起始 結束 LINE_ID"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請輸入正確格式：學校 姓名 學號 起始日 結束日"))
         return True
 
-    # ✅ 指令：刪除使用者
-    if user_input.startswith("delet") and whitelist.get(user_id, {}).get("role") == "admin":
-        try:
-            _, target = user_input.split()
-            key = target
-            for k, v in whitelist.items():
-                if k == target or v.get("student_id") == target:
+    # ✅ admin 功能（開發者）
+    if is_admin(user_id):
+        parts = user_input.strip().split()
+
+        if user_input.startswith("approve ") and len(parts) == 2:
+            target = parts[1]
+            pending = load_json(PENDING_FILE)
+            key = None
+            for k, v in pending.items():
+                if v.get("line_id") == target or v.get("student_id") == target:
                     key = k
                     break
-            if key in whitelist:
-                del whitelist[key]
-                save_whitelist(whitelist)
-                line_bot_api.push_message(user_id, TextSendMessage(text=f"🗑️ 已移除 {target}。"))
+            if key:
+                entry = pending.pop(key)
+                whitelist = load_json(WHITELIST_FILE)
+                whitelist[entry["line_id"]] = entry
+                save_json(WHITELIST_FILE, whitelist)
+                save_json(PENDING_FILE, pending)
+                line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已審核 {entry['name']} 成功加入白名單。"))
+                line_bot_api.push_message(entry["line_id"], TextSendMessage(text="✅ 你的帳號已成功通過審核，可開始使用測驗系統！"))
             else:
-                line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 查無 {target}。"))
-        except:
-            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 請使用格式：delet LINE_ID 或 delet 學號"))
-        return True
+                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 查無此學號或 LINE ID，請確認是否正確。"))
+            return True
+
+        if user_input.startswith("input ") and len(parts) == 7:
+            _, school, name, student_id, start_date, end_date, target_line = parts
+            whitelist = load_json(WHITELIST_FILE)
+            whitelist[target_line] = {
+                "school": school,
+                "name": name,
+                "student_id": student_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "line_id": target_line
+            }
+            save_json(WHITELIST_FILE, whitelist)
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已手動新增 {name} 至白名單。"))
+            return True
+
+        if user_input.startswith("delet ") and len(parts) == 2:
+            target = parts[1]
+            data = load_json(WHITELIST_FILE)
+            key = None
+            for k, v in data.items():
+                if v.get("line_id") == target or v.get("student_id") == target:
+                    key = k
+                    break
+            if key:
+                removed = data.pop(key)
+                save_json(WHITELIST_FILE, data)
+                line_bot_api.push_message(user_id, TextSendMessage(text=f"🗑️ 已移除 {removed['name']}"))
+            else:
+                line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 查無此學號或 LINE ID。"))
+            return True
+
+        if user_input == "show whitelist":
+            whitelist = load_json(WHITELIST_FILE)
+            if not whitelist:
+                msg = "📋 目前白名單為空。"
+            else:
+                msg = "📋 白名單名單：\n" + "\n".join(
+                    [f"{v['name']} ({v['student_id']}) {v['start_date']}~{v['end_date']}" for v in whitelist.values()])
+            line_bot_api.push_message(user_id, TextSendMessage(text=msg))
+            return True
+
+        if user_input == "show pending":
+            pending = load_json(PENDING_FILE)
+            if not pending:
+                msg = "📋 目前無待審核資料。"
+            else:
+                msg = "🕐 待審核清單：\n" + "\n".join(
+                    [f"{v['name']} ({v['student_id']}) {v['start_date']}~{v['end_date']}" for v in pending.values()])
+            line_bot_api.push_message(user_id, TextSendMessage(text=msg))
+            return True
 
     return False
