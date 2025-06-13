@@ -1,1 +1,10 @@
-{ }
+{
+  "Uxxxxxxxxxxx": {
+    "school": "國立測試大學",
+    "name": "王測試",
+    "student_id": "12345336",
+    "start_date": "2025-06-01",
+    "end_date": "2025-06-02",
+    "line_id": "Uxxxxxxxxxxx"
+  }
+}
