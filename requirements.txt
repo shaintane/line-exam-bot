@@ -1,5 +1,4 @@
-fastapi>=0.110
-uvicorn[standard]>=0.27
+flask>=2.2
 line-bot-sdk>=2.4
 google-api-python-client>=2.140
 google-auth>=2.30
