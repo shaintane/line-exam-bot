@@ -1,23 +1,24 @@
+from linebot.models import TextSendMessage
 from admin_logic import handle_admin_commands
 from exam_logic import handle_exam_logic
-from linebot.models import TextSendMessage
-import time
-import logging
+from edu_logic import handle_edu_logic
 
-# 安全封裝 push_message，含簡易 retry 與錯誤追蹤
-def safe_push_message(line_bot_api, user_id, message, max_retries=3):
-    for attempt in range(1, max_retries + 1):
-        try:
-            line_bot_api.push_message(user_id, message)
-            return  # 成功即結束
-        except Exception as e:
-            logging.error(f"[PushMessage] 第 {attempt} 次嘗試失敗: {e}")
-            time.sleep(1)  # 簡單延遲
-    logging.error(f"[PushMessage] 已超過最大重試次數，訊息送出失敗：{message}")
+def handle_event(event, line_bot_api, client, user_sessions, registration_buffer):
+    if event.type != "message" or event.message.type != "text":
+        return
 
-def process_message(event, line_bot_api, client, user_sessions, registration_buffer):
-    user_id = event.source.user_id
     user_input = event.message.text.strip()
+    user_id = event.source.user_id
 
-    # 測驗流程邏輯
+    # ✅ 管理員指令（白名單 / 註冊 / 查詢等）
+    if user_input.startswith(("input", "approve", "delet", "show")):
+        handle_admin_commands(user_input, user_id, line_bot_api, client, registration_buffer)
+        return
+
+    # ✅ 教學任務系統（上傳作業、作業查詢、進度追蹤等）
+    if any(keyword in user_input for keyword in ["上傳", "作業", "回饋", "進度", "照片", "留言", "提醒"]):
+        handle_edu_logic(user_input, user_id, line_bot_api, client)
+        return
+
+    # ✅ 國考 AI 助教練習模組（如「免疫」「血庫」等）
     handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_sessions, registration_buffer)
