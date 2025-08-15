@@ -12,6 +12,10 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 
+# ✅ 全域共享暫存區（修正關鍵）
+user_sessions = {}
+registration_buffer = {}
+
 # === Webhook 入口 ===
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -35,8 +39,8 @@ def handle_message(event):
         event=event,
         line_bot_api=line_bot_api,
         client=None,  # 尚未使用
-        user_sessions={},  # 預設為空字典
-        registration_buffer={}  # 預設為空字典
+        user_sessions=user_sessions,              # ✅ 改為共用全域變數
+        registration_buffer=registration_buffer   # ✅ 改為共用全域變數
     )
 
 # === 健康檢查用 (供 Railway 判斷服務狀態) ===
