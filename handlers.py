@@ -20,9 +20,10 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
 
     # ✅ 觸發註冊流程
     if user_input == "註冊":
-        registration_buffer[user_id] = {"step": "ask_name"}
-        line_bot_api.push_message(user_id, TextSendMessage("請輸入您的【姓名】："))
-        return
+       registration_buffer[user_id] = {"step": "ask_name"}
+    print(f"[註冊流程] 建立暫存資料: {registration_buffer}")
+    line_bot_api.push_message(user_id, TextSendMessage("請輸入您的【姓名】："))
+    return
 
     # ✅ 註冊流程進行中
     if user_id in registration_buffer:
