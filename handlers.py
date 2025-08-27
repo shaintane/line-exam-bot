@@ -6,27 +6,27 @@ from edu_logic import handle_edu_logic
 import requests
 import json
 
-# ✅ 暫存註冊用
+# 暫存註冊資料流程狀態用
 registration_buffer = {}
 
-# ✅ LINE webhook 事件總入口
 def handle_event(event, line_bot_api, client, user_sessions, registration_buffer):
     if event.type != "message" or event.message.type != "text":
         return
 
     user_input = event.message.text.strip()
     user_id = event.source.user_id
-    print(f"[Webhook] 收到來自 {user_id} 的訊息：{user_input}")
 
-    # ✅ 觸發註冊流程
+    print(f"[handle_event] 收到訊息：{user_input}，來自 userId：{user_id}")
+
+    # ✅ 註冊流程起點
     if user_input == "註冊":
-       registration_buffer[user_id] = {"step": "ask_name"}
-    print(f"[註冊流程] 建立暫存資料: {registration_buffer}")
-    line_bot_api.push_message(user_id, TextSendMessage("請輸入您的【姓名】："))
-    print(f"[Push] 發送註冊訊息給 {user_id}"
-    return
+        registration_buffer[user_id] = {"step": "ask_name"}
+        print(f"[註冊流程] 建立暫存資料: {registration_buffer}")
+        line_bot_api.push_message(user_id, TextSendMessage("請輸入您的【姓名】："))
+        print(f"[Push] 發送註冊訊息給 {user_id}")
+        return
 
-    # ✅ 註冊流程進行中
+    # ✅ 註冊流程中
     if user_id in registration_buffer:
         result = handle_registration_flow(user_id, user_input, registration_buffer)
 
@@ -57,7 +57,7 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
     handle_exam_logic(user_input, user_id, line_bot_api, client, user_sessions, registration_buffer)
 
 
-# ✅ 註冊流程步驟管理
+# ✅ 註冊邏輯
 def handle_registration_flow(user_id, user_input, registration_buffer):
     current = registration_buffer.get(user_id, {})
     step = current.get("step", "ask_name")
