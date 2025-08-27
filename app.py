@@ -1,49 +1,23 @@
 import os
 from flask import Flask, request, abort, jsonify
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent
-
-from handlers import handle_event  # 引入你寫的事件處理邏輯
+from handlers import handle_event
 
 app = Flask(__name__)
 
-# === LINE Bot 憑證設定 ===
-line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
-
-# ✅ 全域共享暫存區（修正關鍵）
-user_sessions = {}
-registration_buffer = {}
-
-# === Webhook 入口 ===
+# === LINE Webhook 路由 ===
 @app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     print("Received webhook:", body)
-
     try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        print("Invalid signature. Please check your CHANNEL_SECRET.")
-        abort(400)
-
+        events = request.json.get("events", [])
+        for event in events:
+            handle_event(event, None, None, user_sessions={}, registration_buffer={})
+    except Exception as e:
+        print(f"Webhook error: {e}")
     return "OK", 200
 
-# === 訊息事件處理 ===
-@handler.add(MessageEvent)
-def handle_message(event):
-    handle_event(
-        event=event,
-        line_bot_api=line_bot_api,
-        client=None,  # 尚未使用
-        user_sessions=user_sessions,              # ✅ 改為共用全域變數
-        registration_buffer=registration_buffer   # ✅ 改為共用全域變數
-    )
-
-# === 健康檢查用 (供 Railway 判斷服務狀態) ===
+# === 健康檢查用（供 Railway 判斷服務狀態） ===
 @app.route("/healthz", methods=["GET"])
 def healthz():
     version = os.getenv("APP_VERSION", "dev-1")
