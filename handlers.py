@@ -6,15 +6,16 @@ from edu_logic import handle_edu_logic
 import requests
 import json
 
-# 暫存註冊資料流程狀態用
+# 暫存註冊資料流程狀態用（如果是 from app.py 傳進來，也會共用）
 registration_buffer = {}
 
 def handle_event(event, line_bot_api, client, user_sessions, registration_buffer):
-    if event.type != "message" or event.message.type != "text":
+    # ✅ 修正：event 是 dict，不是物件，要用中括號存取
+    if event.get("type") != "message" or event["message"].get("type") != "text":
         return
 
-    user_input = event.message.text.strip()
-    user_id = event.source.user_id
+    user_input = event["message"]["text"].strip()
+    user_id = event["source"]["userId"]
 
     print(f"[handle_event] 收到訊息：{user_input}，來自 userId：{user_id}")
 
@@ -112,7 +113,7 @@ def handle_registration_flow(user_id, user_input, registration_buffer):
 
 # ✅ 寫入 Google Sheets（Apps Script Web App）
 def send_to_apps_script(data):
-    url = "https://script.google.com/macros/s/🔗你的AppsScript網址/exec"
+    url = "https://script.google.com/macros/s/🔗你的AppsScript網址/exec"  # ←請替換為你的網址
     headers = {"Content-Type": "application/json"}
 
     try:
