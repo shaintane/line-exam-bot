@@ -1,64 +1,40 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
-import json
 import os
+import json
+from datetime import datetime
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
-# ====== Google Sheets 設定 ======
-GOOGLE_SHEET_NAME = "附件7.1實習學生基本資料表（回應）"  # <-- 請確認表單名稱正確
-WHITELIST_FILE = "whitelist.json"
+def get_credentials_from_env():
+    creds_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+    return Credentials.from_service_account_info(creds_info)
 
-# ====== 欄位名稱設定（請與表單表頭一致） ======
-COLUMN_LINE_ID = "LINE ID"
-COLUMN_NAME = "姓名"
-COLUMN_SCHOOL = "學校名稱"
-COLUMN_START_DATE = "實習起始日期"
-COLUMN_END_DATE = "實習結束日期"
+def get_latest_valid_row(sheet_id, sheet_name="Form Responses 1"):
+    creds = get_credentials_from_env()
+    service = build("sheets", "v4", credentials=creds)
+    sheet = service.spreadsheets()
 
-def update_whitelist_from_sheet():
-    # 驗證連線
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("teachingsystemapi-998c7b2ffc1c.json", scope)
-    client = gspread.authorize(creds)
+    result = sheet.values().get(spreadsheetId=sheet_id, range=sheet_name).execute()
+    values = result.get("values", [])
 
-    sheet = client.open(GOOGLE_SHEET_NAME).sheet1
-    records = sheet.get_all_records()
+    if not values or len(values) < 2:
+        return None  # 無資料
 
-    today = datetime.today().date()
+    headers = values[0]
+    latest_row = values[-1]
 
-    # 載入現有白名單
-    if os.path.exists(WHITELIST_FILE):
-        with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
-            whitelist = json.load(f)
-    else:
-        whitelist = {}
+    data = dict(zip(headers, latest_row))
 
-    new_entries = 0
+    start_date = data.get("實習起始日期")
+    end_date = data.get("實習結束日期")
+    line_id = data.get("第 12 題")  # 假設這是 LINE ID 欄位名稱
 
-    for row in records:
-        try:
-            line_id = str(row[COLUMN_LINE_ID]).strip()
-            name = row[COLUMN_NAME]
-            school = row[COLUMN_SCHOOL]
-            start_date = datetime.strptime(str(row[COLUMN_START_DATE]), "%Y-%m-%d").date()
-            end_date = datetime.strptime(str(row[COLUMN_END_DATE]), "%Y-%m-%d").date()
-        except Exception as e:
-            print(f"[❌ 略過無效資料] {e}")
-            continue
+    try:
+        today = datetime.today().date()
+        start = datetime.strptime(start_date, "%Y/%m/%d").date()
+        end = datetime.strptime(end_date, "%Y/%m/%d").date()
+        if start <= today <= end:
+            return {"line_id": line_id, "start_date": str(start), "end_date": str(end)}
+    except Exception as e:
+        print(f"[Sheets] 日期轉換錯誤: {e}")
 
-        # 判斷是否符合期間
-        if start_date <= today <= end_date:
-            if line_id not in whitelist:
-                whitelist[line_id] = {
-                    "name": name,
-                    "school": school,
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "end_date": end_date.strftime("%Y-%m-%d")
-                }
-                new_entries += 1
-
-    # 寫回 json
-    with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
-        json.dump(whitelist, f, ensure_ascii=False, indent=2)
-
-    print(f"[✅ 白名單更新完成] 新增 {new_entries} 筆，總計 {len(whitelist)} 筆。")
+    return None
