@@ -1,8 +1,13 @@
 import os
 from flask import Flask, request, abort, jsonify
 from handlers import handle_event
+from linebot import LineBotApi, WebhookParser
 
 app = Flask(__name__)
+
+# 初始化 LINE Bot SDK
+line_bot_api = LineBotApi(os.environ.get("CHANNEL_ACCESS_TOKEN"))
+parser = WebhookParser(os.environ.get("CHANNEL_SECRET"))
 
 # 暫存用戶狀態
 user_sessions = {}
@@ -16,7 +21,7 @@ def callback():
     try:
         events = request.json.get("events", [])
         for event in events:
-            handle_event(event, None, None, user_sessions, registration_buffer)
+            handle_event(event, line_bot_api, parser, user_sessions, registration_buffer)
     except Exception as e:
         print(f"Webhook error: {e}")
     return "OK", 200
