@@ -4,7 +4,7 @@ from sheets_logic import get_latest_valid_row, write_whitelist
 
 # === 指定 Google Sheets 的資訊 ===
 SPREADSHEET_ID = "1XI0iP1iqD8aDRKG0FQF8VwtrLij-MuBEop_BM1WXRAY"  # 你的試算表ID
-SHEET_NAME = "Form Responses 1"  # 分頁名稱，若中文請改成實際名稱，例如「表單回應 1」
+SHEET_NAME = "註冊回應 1"  # 分頁名稱，若中文請改成實際名稱，例如「表單回應 1」
 
 # 你的 Google 表單（換成你的表單ID），已預填 LINE_ID
 FORM_URL_TEMPLATE = (
