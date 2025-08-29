@@ -47,7 +47,7 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                             text=(
                                 "✅ 註冊完成並加入白名單！\n"
                                 f"姓名：{latest.get('name','')}\n"
-                                f"學校：{latest.get('school','')}\n"
+                                f"角色：{latest.get('school','')}\n"
                                 f"有效期：{latest['start_date']} ～ {latest['end_date']}\n\n"
                                 "你現在可以直接使用測驗與其他功能囉。"
                             )
