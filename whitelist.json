@@ -1,8 +1,7 @@
 {
   "Uxxxxxxxxxxxxxxxxxxxxxx": {
-    "student_id": "A123456789",
     "name": "王小明",
-    "school": "台灣醫學大學",
+    "role": "台灣醫學大學",
     "start_date": "2025-06-01",
     "end_date": "2025-12-31"
   }
