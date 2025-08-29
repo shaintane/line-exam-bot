@@ -9,21 +9,19 @@ import os
 SPREADSHEET_ID = "1XI0iP1iqD8aDRKG0FQF8VwtrLij-MuBEop_BM1WXRAY"  # 若換了新試算表，請一併更新
 SHEET_NAME = "註冊回應 1"   # ← 依你的需求固定在「註冊回應 1」
 
-# === Google 表單預填參數（你提供的） ===
+# === Google 表單預填參數 ===
 FORM_ID = "1lCiYdpBIlxqMihyG6ZFJdCN3zkUmyk-zlkQxEP4dlrg"
 ENTRY_ID_FOR_LINE_ID = "entry.1933153861"
 
 # === 管理員 LINE User ID ===
 # 建議改成環境變數（優先讀 env，沒有就用備用值）
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ua14ba7a3ae8c1c046398b86fb8bb2344")  # ← 換成你的 User ID
-
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ua14ba7a3ae8c1c046398b86fb8bb2344")  # ← 依照你的要求固定
 
 def build_form_url(line_id: str) -> str:
     return (
         f"https://docs.google.com/forms/d/{FORM_ID}/viewform"
         f"?usp=pp_url&{ENTRY_ID_FOR_LINE_ID}={quote_plus(line_id)}"
     )
-
 
 def _safe_load_whitelist():
     try:
@@ -34,11 +32,9 @@ def _safe_load_whitelist():
     except Exception as e:
         raise RuntimeError(f"讀取白名單失敗：{e}")
 
-
 def _safe_save_whitelist(data: dict):
     with open("whitelist.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
 
 def handle_event(event, line_bot_api, client, user_sessions, registration_buffer):
     if event.get("type") != "message" or event["message"].get("type") != "text":
@@ -79,7 +75,7 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                             text=(
                                 "✅ 註冊完成並加入白名單！\n"
                                 f"姓名：{latest.get('name','')}\n"
-                                f"角色：{role}\n"
+                                f"角色：{role} (student)\n" if role == "student" else f"角色：{role}\n"
                                 f"有效期：{start} ～ {end}\n\n"
                                 "你現在可以直接使用測驗與其他功能囉。"
                             )
@@ -120,12 +116,27 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
 
     # === 管理員指令（僅限 ADMIN_USER_ID） ===
     if user_id == ADMIN_USER_ID:
-        parts = user_input.strip().split()
-        if not parts:
+        # 正規化輸入（容忍空白版本的指令）
+        raw = user_input.strip()
+        tokens = raw.split()
+        if not tokens:
             return
-        cmd = parts[0].lower()
 
-        # help_admin → 顯示指令表
+        first = tokens[0].lower()
+        second = tokens[1].lower() if len(tokens) > 1 else ""
+        alias_map = {
+            "show all": "show_all",
+            "help admin": "help_admin",
+        }
+        two_words = (first + " " + second).strip()
+        if two_words in alias_map:
+            cmd = alias_map[two_words]
+            args = tokens[2:]
+        else:
+            cmd = first
+            args = tokens[1:]
+
+        # help_admin
         if cmd == "help_admin":
             msg = (
                 "🛠 管理員指令表：\n"
@@ -140,7 +151,7 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
 
         # show_all [role]
         if cmd == "show_all":
-            role_filter = parts[1].lower() if len(parts) == 2 else None
+            role_filter = args[0].lower() if len(args) >= 1 else None
             try:
                 data = _safe_load_whitelist()
             except Exception as e:
@@ -169,8 +180,8 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
             return
 
         # show_user <LINE_ID>
-        if cmd == "show_user" and len(parts) == 2:
-            target = parts[1]
+        if cmd == "show_user" and len(args) == 1:
+            target = args[0]
             try:
                 data = _safe_load_whitelist()
                 info = data.get(target)
@@ -185,8 +196,8 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
             return
 
         # remove_user <LINE_ID>
-        if cmd == "remove_user" and len(parts) == 2:
-            target = parts[1]
+        if cmd == "remove_user" and len(args) == 1:
+            target = args[0]
             try:
                 data = _safe_load_whitelist()
                 if target in data:
@@ -201,8 +212,8 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
             return
 
         # find_name <關鍵字>
-        if cmd == "find_name" and len(parts) == 2:
-            keyword = parts[1]
+        if cmd == "find_name" and len(args) == 1:
+            keyword = args[0]
             try:
                 data = _safe_load_whitelist()
             except Exception as e:
@@ -223,5 +234,11 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
 
             line_bot_api.push_message(user_id, TextSendMessage(text=msg))
             return
+
+    # 非管理員但疑似輸入了管理員指令 → 給提示
+    admin_like = ["show_all", "show all", "help_admin", "help admin", "show_user", "remove_user", "find_name"]
+    if any(user_input.lower().startswith(p) for p in admin_like):
+        line_bot_api.push_message(user_id, TextSendMessage(text="此為管理員指令，沒有權限無法使用。"))
+        return
 
     # 其他指令/模組...
