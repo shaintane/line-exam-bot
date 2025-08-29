@@ -1,7 +1,7 @@
 {
   "Uxxxxxxxxxxxxxxxxxxxxxx": {
     "name": "王小明",
-    "role": "student",          // or "teacher" / "pending_teacher"
+    "role": "student", "teacher"
     "start_date": "2025-06-01",
     "end_date": "2025-12-31",
     "email": ""
