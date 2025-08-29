@@ -78,10 +78,10 @@ def get_latest_valid_row(sheet_id: str, sheet_name: str, user_id: str, line_id_h
         if line_id != user_id:
             continue
 
-        start_s = safe_get(r, "實習起始日期")
-        end_s   = safe_get(r, "實習結束日期")
+        start_s = safe_get(r, "起始日期 (學生統一填實習起始日期/教師免填)")
+        end_s   = safe_get(r, "結束日期 (學生統一填實習起始日期/教師免填)")
         name    = safe_get(r, "姓名")
-        school  = safe_get(r, "學校名稱") or safe_get(r, "學校")
+        role  = safe_get(r, "角色") or safe_get(r, "角色")
 
         start_d = _parse_date(start_s)
         end_d   = _parse_date(end_s)
@@ -108,7 +108,7 @@ def write_whitelist(entry: dict, path="whitelist.json"):
       "Uxxxxxxxx": {
         "student_id": "...",  # 若沒有就略過
         "name": "...",
-        "school": "...",
+        "role": "...",
         "start_date": "YYYY-MM-DD",
         "end_date": "YYYY-MM-DD"
       }
