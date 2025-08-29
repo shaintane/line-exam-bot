@@ -108,7 +108,7 @@ def get_latest_valid_row(sheet_id: str, sheet_name: str, user_id: str, line_id_h
             return {
                 "LINE_ID": user_id,
                 "name": name,
-                "role": role.lower(),       # student / teacher / pending_teacher
+                "role": role.lower(),
                 "email": email,
                 "start_date": start_d.isoformat() if start_d else "",
                 "end_date":   end_d.isoformat()   if end_d   else "",
