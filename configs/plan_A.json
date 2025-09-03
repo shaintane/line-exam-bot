@@ -7,15 +7,15 @@
   "tasks": [
     {
       "task_id": "D01",
-      "title": "實驗室報到與說明會",
+      "title": "實驗室報到說明與實驗室安全訓練",
       "category": "orientation",
       "start_offset_days": 0,
       "due_offset_days": 0,
       "week_span": [1],
       "required": true,
       "deliverables": [
-        "簽到照",
-        "報到流程單"
+        "實習學生基本資料表",
+        "實習學生基本資料表"
       ],
       "sheet_columns": {
         "狀態": "未開始",
@@ -33,7 +33,7 @@
         "create_event": true,
         "all_day": true,
         "title": "實驗室報到日",
-        "location": "臨床實驗室 3 樓 A 教室",
+        "location": "病理檢驗部會議室",
         "attendees": []
       }
     }
