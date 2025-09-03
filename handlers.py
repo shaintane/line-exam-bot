@@ -9,16 +9,26 @@ except Exception as e:
     init_plan_for_student = None
     print(f"[WARNING] 無法匯入 init_plan_for_student：{e}")
 
-# === Google Sheets 資訊 ===
+# === Google Sheets 註冊資料表 ===
 SPREADSHEET_ID = "1XI0iP1iqD8aDRKG0FQF8VwtrLij-MuBEop_BM1WXRAY"
 SHEET_NAME = "註冊回應 1"
 FORM_ID = "1lCiYdpBIlxqMihyG6ZFJdCN3zkUmyk-zlkQxEP4dlrg"
 ENTRY_ID_FOR_LINE_ID = "entry.1933153861"
 
+# === 實習生基本資料表（Plan_A） ===
+BASIC_INFO_FORM_ID = "1U2prbo2B1CXYVZPudk1ZS6U9yu_wbIyEFnQn-JnY4jI"
+BASIC_INFO_ENTRY_ID = "entry.379404540"
+
 def build_form_url(line_id: str) -> str:
     return (
         f"https://docs.google.com/forms/d/{FORM_ID}/viewform"
         f"?usp=pp_url&{ENTRY_ID_FOR_LINE_ID}={quote_plus(line_id)}"
+    )
+
+def build_basic_info_form_url(line_id: str) -> str:
+    return (
+        f"https://docs.google.com/forms/d/{BASIC_INFO_FORM_ID}/viewform"
+        f"?usp=pp_url&{BASIC_INFO_ENTRY_ID}={quote_plus(line_id)}"
     )
 
 def handle_event(event, line_bot_api, client, user_sessions, registration_buffer):
@@ -47,7 +57,9 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                     role  = latest.get("role") or "student"
                     name  = latest.get("name", "同學")
 
-                    # ✅ 發送註冊成功訊息
+                    basic_form_url = build_basic_info_form_url(user_id)
+
+                    # ✅ 發送註冊成功 + 基本資料表連結
                     line_bot_api.push_message(
                         user_id,
                         TextSendMessage(
@@ -56,12 +68,14 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                                 f"姓名：{name}\n"
                                 f"角色：{role}\n"
                                 f"有效期：{start} ～ {end}\n\n"
-                                "已自動開啟你的學習歷程任務，請先完成 Day01 報到。"
+                                "📌 已自動開啟你的學習歷程任務。\n"
+                                "請先完成 ✅【實習生基本資料表】並於報到日完成報到。\n"
+                                f"👉 填寫表單：{basic_form_url}"
                             )
                         ),
                     )
 
-                    # ✅ 嘗試啟動 Plan_A 初始化（安全包裝）
+                    # ✅ 嘗試初始化 Plan_A
                     if init_plan_for_student:
                         try:
                             init_plan_for_student(user_id, "Plan_A")
@@ -73,7 +87,7 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                 else:
                     line_bot_api.push_message(
                         user_id,
-                        TextSendMessage(text="註冊寫入白名單時發生問題，請稍後再試或聯絡管理者。")
+                        TextSendMessage(text="❗ 註冊寫入白名單時發生問題，請稍後再試或聯絡管理者。")
                     )
             else:
                 form_url = build_form_url(user_id)
