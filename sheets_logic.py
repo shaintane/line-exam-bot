@@ -10,7 +10,7 @@ gc = gspread.authorize(creds)
 
 # ✅ 對應學生身份的欄位名稱（可根據你的表單調整）
 BASIC_INFO_SHEET_ID = "1U2prbo2B1CXYVZPudk1ZS6U9yu_wbIyEFnQn-JnY4jI"
-BASIC_INFO_SHEET_NAME = "表單回應 1"  # ← 改為你實際表單工作表名稱
+BASIC_INFO_SHEET_NAME = "基本資料表"  # ← 改為你實際表單工作表名稱
 
 def get_student_identity_from_basic_sheet(user_id: str) -> dict:
     try:
