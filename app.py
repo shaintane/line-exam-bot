@@ -1,8 +1,14 @@
-# app.py  最終版
+# app.py 最終版
 import os
+import base64
 from flask import Flask, request, jsonify
 from linebot import LineBotApi
 from handlers import handle_event
+
+# ✅ 若有環境變數，解碼 credentials.json
+if "CREDENTIALS_JSON_B64" in os.environ:
+    with open("credentials.json", "wb") as f:
+        f.write(base64.b64decode(os.environ["CREDENTIALS_JSON_B64"]))
 
 # ====== 基本設定 ======
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
