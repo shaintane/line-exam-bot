@@ -2,13 +2,16 @@
 from urllib.parse import quote_plus
 from linebot.models import TextSendMessage
 from sheets_logic import get_latest_valid_row, write_whitelist
-from init_pipeline import init_plan_for_student  # ✅ 加入初始化流程
+
+try:
+    from init_pipeline import init_plan_for_student
+except Exception as e:
+    init_plan_for_student = None
+    print(f"[WARNING] 無法匯入 init_plan_for_student：{e}")
 
 # === Google Sheets 資訊 ===
 SPREADSHEET_ID = "1XI0iP1iqD8aDRKG0FQF8VwtrLij-MuBEop_BM1WXRAY"
 SHEET_NAME = "註冊回應 1"
-
-# === Google 表單預填參數 ===
 FORM_ID = "1lCiYdpBIlxqMihyG6ZFJdCN3zkUmyk-zlkQxEP4dlrg"
 ENTRY_ID_FOR_LINE_ID = "entry.1933153861"
 
@@ -58,9 +61,14 @@ def handle_event(event, line_bot_api, client, user_sessions, registration_buffer
                         ),
                     )
 
-                    # ✅ 啟動 Plan_A 初始化
-                    print(f"[註冊成功] {user_id} → 執行 Plan_A 初始化")
-                    init_plan_for_student(user_id, "Plan_A")
+                    # ✅ 嘗試啟動 Plan_A 初始化（安全包裝）
+                    if init_plan_for_student:
+                        try:
+                            init_plan_for_student(user_id, "Plan_A")
+                        except Exception as e:
+                            print(f"[WARNING] 執行 Plan_A 初始化失敗：{e}")
+                    else:
+                        print("[INFO] Plan 初始化模組未啟用")
 
                 else:
                     line_bot_api.push_message(
