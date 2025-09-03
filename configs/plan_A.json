@@ -1,1 +1,40 @@
-
+{
+  "plan_id": "Plan_A",
+  "version": "1.0",
+  "anchor": "whitelist.start_date",
+  "weeks_total": 1,
+  "tasks": [
+    {
+      "task_id": "D01",
+      "title": "實驗室報到與說明會",
+      "category": "orientation",
+      "start_offset_days": 0,
+      "due_offset_days": 0,
+      "week_span": [1],
+      "required": true,
+      "deliverables": [
+        "簽到照",
+        "報到流程單"
+      ],
+      "sheet_columns": {
+        "狀態": "未開始",
+        "連結": "",
+        "教師回饋": ""
+      },
+      "drive_subfolder": "Day01_報到",
+      "dependencies": [],
+      "notifications": {
+        "on_start": true,
+        "before_due_days": [1],
+        "flex_template": "default"
+      },
+      "calendar": {
+        "create_event": true,
+        "all_day": true,
+        "title": "實驗室報到日",
+        "location": "臨床實驗室 3 樓 A 教室",
+        "attendees": []
+      }
+    }
+  ]
+}
