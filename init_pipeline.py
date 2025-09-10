@@ -2,7 +2,7 @@
 import json
 from plans_loader import load_plan
 from student_sheet_logic import create_student_sheet
-from drive_logic import create_student_drive_folders
+from drive_logic import create_student_drive_folder
 from whitelist import get_user_plan_list
 from sheets_logic import get_student_identity_from_basic_sheet
 
@@ -23,7 +23,7 @@ def init_plan_for_student(user_id, plan_id="Plan_A"):
     print(f"[init_plan_for_student] 取得學生身份資料：{student}")
 
     # 3. 建立 Google Drive 子資料夾
-    folder_id = create_student_drive_folders(student, plan["tasks"])
+    folder_id = create_student_drive_folder(student, plan["tasks"])
     print(f"[init_plan_for_student] 已建立學生資料夾：{folder_id}")
 
     # 4. 建立 Google Sheet 分頁並初始化任務
