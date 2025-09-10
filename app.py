@@ -1,10 +1,12 @@
-# app.py (最小可運行版)
+# app.py (LINE Bot 最小可運行 + 回覆訊息)
 
 import os
 import base64
 from flask import Flask, request, jsonify
+from linebot import LineBotApi
+from linebot.models import TextSendMessage
 
-# ✅ 建立 credentials.json (延後才用到)
+# ====== 初始化 credentials.json (延後才用到 Google API) ======
 if "CREDENTIALS_JSON_B64" in os.environ:
     try:
         with open("credentials.json", "wb") as f:
@@ -13,13 +15,44 @@ if "CREDENTIALS_JSON_B64" in os.environ:
     except Exception as e:
         print(f"[WARNING] 無法寫入 credentials.json: {e}")
 
+# ====== LINE Bot API ======
+CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
+
+if not CHANNEL_ACCESS_TOKEN:
+    raise RuntimeError("❌ 缺少 CHANNEL_ACCESS_TOKEN")
+if not CHANNEL_SECRET:
+    raise RuntimeError("❌ 缺少 CHANNEL_SECRET")
+
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+
+# ====== Flask App ======
 app = Flask(__name__)
 
-# ====== Webhook 測試入口 ======
+# ====== Webhook ======
 @app.route("/callback", methods=["POST"])
 def callback():
     body = request.get_data(as_text=True)
-    print("[Webhook] raw body:", body[:200])  # 只印前 200 chars，避免太長
+    print("[Webhook] raw body:", body)
+
+    payload = request.get_json(silent=True) or {}
+    events = payload.get("events", [])
+
+    for event in events:
+        try:
+            if event.get("type") == "message" and event["message"]["type"] == "text":
+                user_id = event["source"]["userId"]
+                user_text = event["message"]["text"]
+                print(f"[Webhook] 收到訊息: {user_text} from {user_id}")
+
+                # 回覆訊息
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text=f"你剛剛說了：{user_text}")
+                )
+        except Exception as e:
+            print(f"[Webhook] error: {e}")
+
     return "OK", 200
 
 # ====== 健康檢查 ======
@@ -31,6 +64,4 @@ def healthz():
 
 # ====== 本地啟動 ======
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    print(f"🚀 Flask app 啟動於 port {port}")
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT"
