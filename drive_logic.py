@@ -13,7 +13,7 @@ drive = DriveClient(ga)
 
 PARENT_FOLDER_ID = "19cIFZlEHb8908rOhL67znKK8uzeux-QF"
 
-def create_student_drive_folders(user_id: str, student: dict, plan: dict, base_date: datetime.datetime):
+def create_student_drive_folder(user_id: str, student: dict, plan: dict, base_date: datetime.datetime):
     try:
         name = student.get("name", user_id[-4:])
         student_id = student.get("student_id", user_id[-6:])
