@@ -1,16 +1,20 @@
-# sheets_logic.py
+# sheets_logic.py (lazy load 版, 統一認證方式)
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ✅ 延遲初始化 Google Sheets client
+# ✅ 全域 client，僅在第一次呼叫時初始化
 _gc = None
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
 def get_gc():
     """延遲初始化 gspread client"""
     global _gc
     if _gc is None:
-        SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
         creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
         _gc = gspread.authorize(creds)
         print("[Sheets] gspread client 已初始化")
@@ -19,7 +23,7 @@ def get_gc():
 
 # ✅ 學生基本資料表資訊
 BASIC_INFO_SHEET_ID = "1U2prbo2B1CXYVZPudk1ZS6U9yu_wbIyEFnQn-JnY4jI"
-BASIC_INFO_SHEET_NAME = "基本資料表"  # ← 請依實際表單的工作表名稱修改
+BASIC_INFO_SHEET_NAME = "基本資料表"  # ← 請依實際表單名稱修改
 
 
 def get_student_identity_from_basic_sheet(user_id: str) -> dict:
