@@ -1,17 +1,24 @@
 # drive_logic.py
 
-import os
-import json
-import datetime
-from pydrive2.auth import GoogleAuth as DriveAuth
-from pydrive2.drive import GoogleDrive as DriveClient
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
-ga = DriveAuth()
-ga.LoadServiceConfigFile("credentials.json")
-ga.ServiceAuth()
-drive = DriveClient(ga)
+# ✅ 延遲初始化 Google Drive client
+_drive = None
 
-# ✅ Google Drive 的母資料夾 ID
+def get_drive():
+    """延遲初始化 Google Drive client"""
+    global _drive
+    if _drive is None:
+        ga = GoogleAuth()
+        ga.LoadServiceConfigFile("credentials.json")
+        ga.ServiceAuth()
+        _drive = GoogleDrive(ga)
+        print("[Drive] Google Drive client 已初始化")
+    return _drive
+
+
+# ✅ Google Drive 的母資料夾 ID（存放學生專屬資料夾的根目錄）
 PARENT_FOLDER_ID = "19cIFZlEHb8908rOhL67znKK8uzeux-QF"
 
 
@@ -20,16 +27,14 @@ def create_student_drive_folder(student: dict, tasks: list) -> str:
     在 Google Drive 母資料夾下建立學生個人專屬資料夾，
     並依照 plan["tasks"] 建立子資料夾。
     """
-
     try:
+        drive = get_drive()
         name = student.get("name", "unknown")
         student_id = student.get("student_id", "000000")
         folder_name = f"{name}_{student_id}"
 
-        # 🔍 搜尋是否已存在個人資料夾
-        query = (
-            f"'{PARENT_FOLDER_ID}' in parents and trashed = false and title = '{folder_name}'"
-        )
+        # 🔍 檢查是否已存在
+        query = f"'{PARENT_FOLDER_ID}' in parents and trashed = false and title = '{folder_name}'"
         file_list = drive.ListFile({'q': query}).GetList()
         if file_list:
             folder_id = file_list[0]["id"]
