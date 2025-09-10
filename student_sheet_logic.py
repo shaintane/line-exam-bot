@@ -4,14 +4,30 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-gc = gspread.authorize(creds)
+# ✅ 延遲初始化 Google Sheets client
+_gc = None
 
+def get_gc():
+    """延遲初始化 gspread client"""
+    global _gc
+    if _gc is None:
+        SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+        _gc = gspread.authorize(creds)
+        print("[Sheets] gspread client 已初始化")
+    return _gc
+
+
+# ✅ 學生任務專用的 Google Sheet ID
 SPREADSHEET_ID = "1U2prbo2B1CXYVZPudk1ZS6U9yu_wbIyEFnQn-JnY4jI"
 
+
 def init_student_sheet(user_id: str, student: dict, plan: dict, base_date: datetime):
+    """
+    在 Google Sheet 中建立學生的任務分頁，並初始化 Plan 任務列表
+    """
     try:
+        gc = get_gc()
         name = student.get("name", user_id[-4:])
         student_id = student.get("student_id", user_id[-6:])
         grade = student.get("grade", "2025")
@@ -28,12 +44,14 @@ def init_student_sheet(user_id: str, student: dict, plan: dict, base_date: datet
         except:
             worksheet = sheet.add_worksheet(title=sheet_title, rows="100", cols="20")
 
+        # ✅ 建立表頭
         headers = ["任務編號", "任務名稱", "開始日", "到期日"]
         for key in plan["tasks"][0].get("sheet_columns", {}).keys():
             headers.append(key)
 
         worksheet.append_row(headers)
 
+        # ✅ 寫入任務資料
         for task in plan["tasks"]:
             start = base_date + timedelta(days=task.get("start_offset_days", 0))
             due = base_date + timedelta(days=task.get("due_offset_days", 0))
