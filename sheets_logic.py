@@ -2,20 +2,36 @@
 
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-gc = gspread.authorize(creds)
+# ✅ 延遲初始化 Google Sheets client
+_gc = None
 
-# ✅ 對應學生身份的欄位名稱（可根據你的表單調整）
+def get_gc():
+    """延遲初始化 gspread client"""
+    global _gc
+    if _gc is None:
+        SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+        _gc = gspread.authorize(creds)
+        print("[Sheets] gspread client 已初始化")
+    return _gc
+
+
+# ✅ 學生基本資料表資訊
 BASIC_INFO_SHEET_ID = "1U2prbo2B1CXYVZPudk1ZS6U9yu_wbIyEFnQn-JnY4jI"
-BASIC_INFO_SHEET_NAME = "基本資料表"  # ← 改為你實際表單工作表名稱
+BASIC_INFO_SHEET_NAME = "基本資料表"  # ← 請依實際表單的工作表名稱修改
+
 
 def get_student_identity_from_basic_sheet(user_id: str) -> dict:
+    """
+    從 Google Sheets 擷取學生身份資訊
+    依據 LINE ID 對應姓名 / 學號 / 年度 / 梯次
+    """
     try:
+        gc = get_gc()
         worksheet = gc.open_by_key(BASIC_INFO_SHEET_ID).worksheet(BASIC_INFO_SHEET_NAME)
         rows = worksheet.get_all_records()
+
         for row in reversed(rows):
             if str(row.get("LINE ID", "")).strip() == user_id:
                 return {
