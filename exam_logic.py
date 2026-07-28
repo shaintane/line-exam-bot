@@ -3,6 +3,12 @@ import requests
 import json
 import difflib
 import random
+import os
+import logging
+
+from access_control import check_user_access
+
+LOGGER = logging.getLogger(__name__)
 
 def normalize_answer(ans):
     return ans.strip().replace('.', '').replace('．', '').upper().replace('Ｂ', 'B').replace('Ａ', 'A').replace('Ｃ', 'C').replace('Ｄ', 'D')
@@ -33,6 +39,11 @@ def format_question(q, index, repo):
     return base + (f"\n\n{image_url}" if image_url else "")
 
 def handle_exam_logic(user_input, user_id, event, line_bot_api, client, user_sessions, registration_buffer):
+    access = check_user_access(user_id)
+    if not access.allowed:
+        line_bot_api.push_message(user_id, TextSendMessage(text=access.message))
+        return
+
     SUBJECTS = {
         "臨床血清免疫學": "examimmun",
         "臨床血液與血庫學": "exmablood",
@@ -148,7 +159,7 @@ def generate_explanation(client, question, student_answer):
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             messages=[
                 {"role": "system", "content": "你是一位專業的國考解析導師。"},
                 {"role": "user", "content": prompt}
@@ -156,5 +167,6 @@ def generate_explanation(client, question, student_answer):
             timeout=10
         )
         return response.choices[0].message.content.strip()
-    except:
+    except Exception as exc:
+        LOGGER.exception("Failed to generate explanation: %s", exc)
         return None
