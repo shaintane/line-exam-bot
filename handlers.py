@@ -9,6 +9,7 @@ from challenge_logic import (
 )
 from challenge_service import (
     complete_challenge_attempt,
+    finalize_expired_challenges,
     get_challenge_timing,
     save_challenge_answer,
     start_challenge_attempt,
@@ -686,6 +687,36 @@ def process_message(
 ):
     user_id = event.source.user_id
     user_input = event.message.text.strip()
+
+    # 每次收到使用者訊息時，先補結算已超過 23 分鐘、
+    # 但仍停留在 in_progress 的挑戰紀錄。
+    try:
+        expired_count = finalize_expired_challenges(
+            user_id
+        )
+
+        if expired_count > 0:
+            active_session = user_sessions.get(user_id) or {}
+
+            # 若記憶體中仍保留舊挑戰 session，
+            # 清除後讓本次訊息正常進入後續流程。
+            if active_session.get("exam_mode") == "challenge":
+                user_sessions.pop(user_id, None)
+
+            LOGGER.info(
+                "Expired challenges synchronized on message: "
+                "user_id=%s count=%s",
+                user_id,
+                expired_count,
+            )
+
+    except Exception:
+        # 補結算失敗不阻擋使用者原本的操作。
+        LOGGER.exception(
+            "Expired challenge synchronization failed: "
+            "user_id=%s",
+            user_id,
+        )
 
     # ---------------------------------------------------------
     # 顯示目前使用者的 LINE User ID
