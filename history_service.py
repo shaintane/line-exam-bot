@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from database import db
@@ -19,20 +19,31 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def clean_optional_text(value: Any) -> str | None:
+    """將可選文字欄位整理為字串；空白值回傳 None。"""
+    if value is None:
+        return None
+
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 def get_or_create_user(
     line_user_id: str,
     *,
     name: str | None = None,
     school: str | None = None,
     student_id: str | None = None,
-    role: str = "intern",
-    status: str = "approved",
+    role: str | None = None,
+    status: str | None = None,
+    valid_from: date | None = None,
+    valid_until: date | None = None,
 ) -> User:
     """
-    依 LINE User ID 取得使用者。
+    依 LINE User ID 取得或建立使用者。
 
-    若資料庫中尚無此使用者，便建立基本資料。
-    若已存在，僅更新有提供且非空白的欄位。
+    既有使用者只更新本次有提供的欄位，避免每次開始測驗時
+    將已同步的角色、狀態及有效期限覆蓋回預設值。
     """
     cleaned_line_user_id = str(line_user_id or "").strip()
 
@@ -46,39 +57,50 @@ def get_or_create_user(
     if user is None:
         user = User(
             line_user_id=cleaned_line_user_id,
-            name=str(name).strip() if name else None,
-            school=str(school).strip() if school else None,
-            student_id=(
-                str(student_id).strip()
-                if student_id
-                else None
-            ),
-            role=str(role or "intern").strip(),
-            status=str(status or "approved").strip(),
+            name=clean_optional_text(name),
+            school=clean_optional_text(school),
+            student_id=clean_optional_text(student_id),
+            role=clean_optional_text(role) or "student",
+            status=clean_optional_text(status) or "active",
+            valid_from=valid_from,
+            valid_until=valid_until,
         )
         db.session.add(user)
     else:
-        if name:
-            user.name = str(name).strip()
+        cleaned_name = clean_optional_text(name)
+        cleaned_school = clean_optional_text(school)
+        cleaned_student_id = clean_optional_text(student_id)
+        cleaned_role = clean_optional_text(role)
+        cleaned_status = clean_optional_text(status)
 
-        if school:
-            user.school = str(school).strip()
+        if cleaned_name is not None:
+            user.name = cleaned_name
 
-        if student_id:
-            user.student_id = str(student_id).strip()
+        if cleaned_school is not None:
+            user.school = cleaned_school
 
-        if role:
-            user.role = str(role).strip()
+        if cleaned_student_id is not None:
+            user.student_id = cleaned_student_id
 
-        if status:
-            user.status = str(status).strip()
+        if cleaned_role is not None:
+            user.role = cleaned_role
+
+        if cleaned_status is not None:
+            user.status = cleaned_status
+
+        if valid_from is not None:
+            user.valid_from = valid_from
+
+        if valid_until is not None:
+            user.valid_until = valid_until
 
     try:
         db.session.commit()
         LOGGER.info(
-            "User ready: line_user_id=%s database_user_id=%s",
+            "User ready: line_user_id=%s database_user_id=%s status=%s",
             cleaned_line_user_id,
             user.id,
+            user.status,
         )
         return user
     except Exception:
@@ -88,6 +110,171 @@ def get_or_create_user(
             cleaned_line_user_id,
         )
         raise
+
+
+def sync_user_from_access(
+    line_user_id: str,
+    access: Any,
+) -> User:
+    """
+    將 access_control.check_user_access() 的結果同步到 users 資料表。
+
+    同步內容：
+    - 姓名
+    - 學校
+    - 學號
+    - 角色
+    - 權限狀態
+    - 使用起始日
+    - 使用截止日
+    """
+    user_data = getattr(access, "user", None) or {}
+    access_status = str(
+        getattr(access, "status", "") or ""
+    ).strip()
+
+    database_status_map = {
+        "admin": "active",
+        "active": "active",
+        "unapproved": "unapproved",
+        "disabled": "disabled",
+        "invalid_dates": "invalid_dates",
+        "not_started": "not_started",
+        "expired": "expired",
+    }
+
+    database_status = database_status_map.get(
+        access_status,
+        access_status or "unknown",
+    )
+
+    return get_or_create_user(
+        line_user_id=line_user_id,
+        name=user_data.get("name"),
+        school=user_data.get("school"),
+        student_id=user_data.get("student_id"),
+        role=user_data.get("role"),
+        status=database_status,
+        valid_from=getattr(access, "valid_from", None),
+        valid_until=getattr(access, "valid_until", None),
+    )
+
+
+def purge_user_history(
+    line_user_id: str,
+) -> dict[str, int]:
+    """
+    刪除指定使用者的所有學習歷程，但保留 users 基本資料。
+
+    刪除範圍：
+    - exam_attempts
+    - answer_records
+    - explanation_records
+
+    因模型已設定 cascade，刪除每筆 ExamAttempt 時，
+    所屬作答與解析會一併刪除。
+    """
+    cleaned_line_user_id = str(line_user_id or "").strip()
+
+    if not cleaned_line_user_id:
+        raise ValueError("line_user_id cannot be empty.")
+
+    user = User.query.filter_by(
+        line_user_id=cleaned_line_user_id
+    ).first()
+
+    if user is None:
+        LOGGER.info(
+            "History purge skipped; database user not found: line_user_id=%s",
+            cleaned_line_user_id,
+        )
+        return {
+            "attempts": 0,
+            "answers": 0,
+            "explanations": 0,
+        }
+
+    attempts = ExamAttempt.query.filter_by(
+        user_id=user.id
+    ).all()
+
+    attempt_count = len(attempts)
+    answer_count = sum(
+        len(attempt.answer_records)
+        for attempt in attempts
+    )
+    explanation_count = sum(
+        len(answer.explanation_records)
+        for attempt in attempts
+        for answer in attempt.answer_records
+    )
+
+    try:
+        for attempt in attempts:
+            db.session.delete(attempt)
+
+        user.status = "expired"
+        db.session.commit()
+
+        LOGGER.warning(
+            "Expired user history purged: line_user_id=%s "
+            "database_user_id=%s attempts=%s answers=%s explanations=%s",
+            cleaned_line_user_id,
+            user.id,
+            attempt_count,
+            answer_count,
+            explanation_count,
+        )
+
+        return {
+            "attempts": attempt_count,
+            "answers": answer_count,
+            "explanations": explanation_count,
+        }
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to purge user history: line_user_id=%s",
+            cleaned_line_user_id,
+        )
+        raise
+
+
+def sync_access_and_apply_retention(
+    line_user_id: str,
+    access: Any,
+) -> User | None:
+    """
+    同步權限資料，並套用到期資料保留規則。
+
+    - active、admin、not_started、disabled、invalid_dates：
+      同步使用者資料，不刪除歷程。
+    - expired：
+      同步狀態後，刪除全部測驗、作答與解析歷程。
+    - unapproved 且資料庫從未建立此人：
+      不建立空白使用者資料。
+    """
+    access_status = str(
+        getattr(access, "status", "") or ""
+    ).strip()
+
+    if access_status == "unapproved":
+        existing_user = User.query.filter_by(
+            line_user_id=str(line_user_id or "").strip()
+        ).first()
+
+        if existing_user is None:
+            return None
+
+    user = sync_user_from_access(
+        line_user_id,
+        access,
+    )
+
+    if access_status == "expired":
+        purge_user_history(line_user_id)
+
+    return user
 
 
 def start_exam_attempt(
@@ -149,7 +336,9 @@ def save_answer_record(
     )
 
     if question_number <= 0:
-        raise ValueError("question number must be greater than zero.")
+        raise ValueError(
+            "question number must be greater than zero."
+        )
 
     question_id = (
         question.get("題目ID")
@@ -169,8 +358,12 @@ def save_answer_record(
             question.get("題目", "")
         ).strip(),
         options_json=question.get("選項", []),
-        student_answer=str(student_answer or "").strip(),
-        correct_answer=str(correct_answer or "").strip(),
+        student_answer=str(
+            student_answer or ""
+        ).strip(),
+        correct_answer=str(
+            correct_answer or ""
+        ).strip(),
         is_correct=bool(is_correct),
         answered_at=utc_now(),
     )
@@ -180,7 +373,8 @@ def save_answer_record(
         db.session.commit()
 
         LOGGER.info(
-            "Answer saved: answer_id=%s attempt_id=%s question_number=%s correct=%s",
+            "Answer saved: answer_id=%s attempt_id=%s "
+            "question_number=%s correct=%s",
             record.id,
             record.attempt_id,
             record.question_number,
@@ -190,7 +384,8 @@ def save_answer_record(
     except Exception:
         db.session.rollback()
         LOGGER.exception(
-            "Failed to save answer: attempt_id=%s question_number=%s",
+            "Failed to save answer: attempt_id=%s "
+            "question_number=%s",
             attempt_id,
             question_number,
         )
@@ -234,7 +429,8 @@ def complete_exam_attempt(
         db.session.commit()
 
         LOGGER.info(
-            "Exam attempt completed: attempt_id=%s correct=%s total=%s rate=%s",
+            "Exam attempt completed: attempt_id=%s "
+            "correct=%s total=%s rate=%s",
             attempt.id,
             correct,
             total,
@@ -267,7 +463,9 @@ def save_explanation_record(
     model_name: str | None = None,
 ) -> ExplanationRecord:
     """使用者取得 AI 解析後保存解析內容。"""
-    cleaned_text = str(explanation_text or "").strip()
+    cleaned_text = str(
+        explanation_text or ""
+    ).strip()
 
     if not cleaned_text:
         raise ValueError(
@@ -290,7 +488,8 @@ def save_explanation_record(
         db.session.commit()
 
         LOGGER.info(
-            "Explanation saved: explanation_id=%s answer_record_id=%s",
+            "Explanation saved: explanation_id=%s "
+            "answer_record_id=%s",
             record.id,
             record.answer_record_id,
         )
@@ -298,7 +497,8 @@ def save_explanation_record(
     except Exception:
         db.session.rollback()
         LOGGER.exception(
-            "Failed to save explanation: answer_record_id=%s",
+            "Failed to save explanation: "
+            "answer_record_id=%s",
             answer_record_id,
         )
         raise
