@@ -7,6 +7,10 @@ from admin_logic import handle_admin_commands
 from exam_logic import handle_exam_logic
 from history_service import sync_access_and_apply_retention
 from learning_history import build_learning_history_message
+from weakness_service import (
+    build_weakness_analysis,
+    format_weakness_analysis,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -24,15 +28,13 @@ def push_text(
     )
 
 
-def handle_learning_history_command(
+def check_and_sync_access(
     user_id: str,
-    line_bot_api,
-) -> None:
+):
     """
-    處理「學習歷程」與「我的成績」指令。
+    檢查使用權限並同步資料庫狀態。
 
-    查詢前先檢查使用權限並同步期限。
-    已過期者會依既定規則刪除歷程，且不得查詢。
+    已過期者會依既定保留規則刪除學習歷程。
     """
     access = check_user_access(user_id)
 
@@ -43,11 +45,21 @@ def handle_learning_history_command(
         )
     except Exception:
         LOGGER.exception(
-            "Failed to synchronize access before "
-            "learning history query: user_id=%s status=%s",
+            "Failed to synchronize access: "
+            "user_id=%s status=%s",
             user_id,
             getattr(access, "status", "unknown"),
         )
+
+    return access
+
+
+def handle_learning_history_command(
+    user_id: str,
+    line_bot_api,
+) -> None:
+    """處理「學習歷程」與「我的成績」指令。"""
+    access = check_and_sync_access(user_id)
 
     if not access.allowed:
         push_text(
@@ -59,6 +71,67 @@ def handle_learning_history_command(
 
     message = build_learning_history_message(
         user_id
+    )
+
+    push_text(
+        line_bot_api,
+        user_id,
+        message,
+    )
+
+
+def handle_weakness_analysis_command(
+    user_id: str,
+    line_bot_api,
+    client,
+    user_sessions,
+) -> None:
+    """
+    處理「弱點分析」指令。
+
+    分析結果會暫存於 user_sessions，供後續
+    「開始弱點練習」建立題目時使用。
+    """
+    access = check_and_sync_access(user_id)
+
+    if not access.allowed:
+        user_sessions.pop(user_id, None)
+        push_text(
+            line_bot_api,
+            user_id,
+            access.message,
+        )
+        return
+
+    push_text(
+        line_bot_api,
+        user_id,
+        "📊 正在分析近期錯題，請稍候。",
+    )
+
+    analysis = build_weakness_analysis(
+        user_id,
+        client,
+    )
+
+    existing_session = user_sessions.get(user_id)
+
+    if existing_session is None:
+        existing_session = {
+            "completed": True,
+        }
+        user_sessions[user_id] = existing_session
+
+    if analysis.get("has_data"):
+        existing_session["weakness_analysis"] = analysis
+    else:
+        existing_session.pop(
+            "weakness_analysis",
+            None,
+        )
+
+    message = format_weakness_analysis(
+        analysis
     )
 
     push_text(
@@ -103,6 +176,21 @@ def process_message(
         return
 
     # ---------------------------------------------------------
+    # AI 弱點分析
+    # ---------------------------------------------------------
+    if user_input in {
+        "弱點分析",
+        "分析弱點",
+    }:
+        handle_weakness_analysis_command(
+            user_id,
+            line_bot_api,
+            client,
+            user_sessions,
+        )
+        return
+
+    # ---------------------------------------------------------
     # 進入測驗選單
     # ---------------------------------------------------------
     if user_input in {
@@ -127,7 +215,8 @@ def process_message(
                 "6️⃣ 病理\n\n"
                 "每次隨機測驗 5 題。\n\n"
                 "例如輸入：微生物\n\n"
-                "查看個人紀錄請輸入：學習歷程"
+                "查看個人紀錄請輸入：學習歷程\n"
+                "分析近期錯題請輸入：弱點分析"
             ),
         )
         return
