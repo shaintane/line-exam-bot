@@ -54,6 +54,19 @@ class User(db.Model):
         lazy=True,
     )
 
+    challenge_profile = db.relationship(
+        "ChallengeProfile",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    challenge_attempts = db.relationship(
+        "ChallengeAttempt",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+
 
 class ExamAttempt(db.Model):
     """每完成或進行一次測驗的主紀錄。"""
@@ -215,3 +228,179 @@ class ExplanationRecord(db.Model):
         "AnswerRecord",
         back_populates="explanation_records",
     )
+
+class ChallengeProfile(db.Model):
+    """挑戰模式專用個人資料；與一般學習歷程分開。"""
+
+    __tablename__ = "challenge_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    nickname = db.Column(
+        db.String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    user = db.relationship(
+        "User",
+        back_populates="challenge_profile",
+    )
+
+
+class ChallengeAttempt(db.Model):
+    """每次挑戰賽的獨立紀錄，不寫入一般 ExamAttempt。"""
+
+    __tablename__ = "challenge_attempts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    question_count = db.Column(
+        db.Integer,
+        nullable=False,
+        default=30,
+    )
+    correct_count = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0,
+        index=True,
+    )
+    score_rate = db.Column(
+        db.Float,
+        nullable=False,
+        default=0.0,
+    )
+    time_limit_seconds = db.Column(
+        db.Integer,
+        nullable=False,
+        default=1380,
+    )
+    elapsed_seconds = db.Column(
+        db.Integer,
+        nullable=True,
+        index=True,
+    )
+    status = db.Column(
+        db.String(30),
+        nullable=False,
+        default="in_progress",
+        index=True,
+    )
+    started_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    completed_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    user = db.relationship(
+        "User",
+        back_populates="challenge_attempts",
+    )
+    challenge_answers = db.relationship(
+        "ChallengeAnswer",
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+        lazy=True,
+        order_by="ChallengeAnswer.question_number",
+    )
+
+
+class ChallengeAnswer(db.Model):
+    """挑戰賽單題作答快照；不納入弱點分析。"""
+
+    __tablename__ = "challenge_answers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    attempt_id = db.Column(
+        db.Integer,
+        db.ForeignKey("challenge_attempts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    question_number = db.Column(
+        db.Integer,
+        nullable=False,
+    )
+    subject = db.Column(
+        db.String(100),
+        nullable=False,
+        index=True,
+    )
+    repo = db.Column(
+        db.String(100),
+        nullable=True,
+    )
+    question_id = db.Column(
+        db.String(150),
+        nullable=True,
+        index=True,
+    )
+    question_text = db.Column(
+        db.Text,
+        nullable=False,
+    )
+    options_json = db.Column(
+        db.JSON,
+        nullable=True,
+    )
+    student_answer = db.Column(
+        db.String(10),
+        nullable=False,
+    )
+    correct_answer = db.Column(
+        db.String(10),
+        nullable=False,
+    )
+    is_correct = db.Column(
+        db.Boolean,
+        nullable=False,
+        index=True,
+    )
+    answered_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    attempt = db.relationship(
+        "ChallengeAttempt",
+        back_populates="challenge_answers",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "attempt_id",
+            "question_number",
+            name="uq_challenge_answer_attempt_question_number",
+        ),
+    )
+
