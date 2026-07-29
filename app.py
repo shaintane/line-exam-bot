@@ -8,6 +8,9 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from openai import OpenAI
 
+from database import init_database
+
+
 load_dotenv()
 
 logging.basicConfig(
@@ -17,6 +20,10 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# 初始化 PostgreSQL，並在啟動時執行一次 SELECT 1 連線測試。
+init_database(app)
+
 line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -27,7 +34,11 @@ registration_buffer = {}
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "service": "line-exam-bot"}, 200
+    return {
+        "status": "ok",
+        "service": "line-exam-bot",
+        "database": "connected",
+    }, 200
 
 
 @app.post("/callback")
@@ -37,10 +48,12 @@ def callback():
         abort(400)
 
     body = request.get_data(as_text=True)
+
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+
     return "OK"
 
 
@@ -57,15 +70,25 @@ def handle_message(event):
             registration_buffer,
         )
     except Exception:
-        LOGGER.exception("Unhandled error while processing LINE message")
+        LOGGER.exception(
+            "Unhandled error while processing LINE message"
+        )
+
         try:
             line_bot_api.push_message(
                 event.source.user_id,
-                TextSendMessage(text="⚠️ 系統暫時無法處理，請稍後再試。"),
+                TextSendMessage(
+                    text="⚠️ 系統暫時無法處理，請稍後再試。"
+                ),
             )
         except Exception:
-            LOGGER.exception("Failed to send fallback error message")
+            LOGGER.exception(
+                "Failed to send fallback error message"
+            )
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8080")),
+    )
