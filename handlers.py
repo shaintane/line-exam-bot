@@ -7,12 +7,18 @@ from challenge_logic import (
     ChallengeQuestionBuildError,
     build_challenge_questions,
 )
-from challenge_service import start_challenge_attempt
+from challenge_service import (
+    complete_challenge_attempt,
+    get_challenge_timing,
+    save_challenge_answer,
+    start_challenge_attempt,
+)
 from admin_logic import handle_admin_commands
 from exam_logic import (
     SUBJECTS,
     format_question,
     handle_exam_logic,
+    normalize_answer,
     load_question_bank,
     start_exam_with_questions,
 )
@@ -429,11 +435,259 @@ def handle_start_challenge_command(
         line_bot_api,
         user_id,
         (
-            "🏆 挑戰開始！\n"
+            "🏆 挑戰開始！\n\n"
             "30 題｜23 分鐘\n"
-            "計時已開始，中途離開不會暫停。\n\n"
-            f"{first_message}"
+            "請輸入 A / B / C / D 作答。\n"
+            "作答後不顯示對錯，會直接進入下一題。\n"
+            "計時已開始，中途離開不會暫停。"
         ),
+    )
+
+    push_text(
+        line_bot_api,
+        user_id,
+        first_message,
+    )
+
+
+def format_elapsed_time(seconds: int) -> str:
+    """將秒數格式化為 X分Y秒。"""
+    total_seconds = max(int(seconds or 0), 0)
+    minutes, secs = divmod(total_seconds, 60)
+    return f"{minutes}分{secs:02d}秒"
+
+
+def finish_challenge_session(
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+    session,
+    *,
+    force_status: str | None = None,
+) -> None:
+    """完成挑戰、寫入資料庫並顯示本次結果。"""
+    attempt_id = session.get("challenge_attempt_id")
+
+    if not attempt_id:
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰紀錄不存在，請重新輸入「挑戰模式」。",
+        )
+        user_sessions.pop(user_id, None)
+        return
+
+    try:
+        attempt = complete_challenge_attempt(
+            int(attempt_id),
+            force_status=force_status,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to finish challenge session: user_id=%s attempt_id=%s",
+            user_id,
+            attempt_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰結果儲存失敗，請稍後再試。",
+        )
+        return
+
+    session["completed"] = True
+    session["challenge_status"] = attempt.status
+
+    answered_count = len(session.get("answers", []))
+    total = int(attempt.question_count or 30)
+    correct = int(attempt.correct_count or 0)
+    rate = float(attempt.score_rate or 0.0)
+    elapsed_text = format_elapsed_time(
+        int(attempt.elapsed_seconds or 0)
+    )
+
+    if attempt.status == "timeout":
+        title = "⏰ 挑戰時間到！"
+    else:
+        title = "🏆 挑戰完成！"
+
+    if attempt.status == "timeout":
+        result_text = (
+            f"{title}\n\n"
+            f"已完成：{answered_count} / {total} 題\n"
+            f"答對題數：{correct} / {total}\n"
+            f"正確率：{rate}%\n"
+            f"完成時間：{elapsed_text}\n\n"
+            "排行榜與個人最佳紀錄將在下一階段接上。"
+        )
+    else:
+        result_text = (
+            f"{title}\n\n"
+            f"答對題數：{correct} / {total}\n"
+            f"正確率：{rate}%\n"
+            f"完成時間：{elapsed_text}\n\n"
+            "排行榜與個人最佳紀錄將在下一階段接上。"
+        )
+
+    push_text(
+        line_bot_api,
+        user_id,
+        result_text,
+    )
+
+
+def handle_challenge_answer(
+    user_input: str,
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+) -> None:
+    """處理挑戰模式 A/B/C/D 作答、下一題與逾時。"""
+    session = user_sessions.get(user_id) or {}
+
+    if session.get("exam_mode") != "challenge":
+        return
+
+    attempt_id = session.get("challenge_attempt_id")
+
+    if not attempt_id:
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰紀錄不存在，請重新輸入「挑戰模式」。",
+        )
+        user_sessions.pop(user_id, None)
+        return
+
+    # 每次作答前先檢查 23 分鐘限制。
+    try:
+        timing = get_challenge_timing(int(attempt_id))
+    except Exception:
+        LOGGER.exception(
+            "Failed to check challenge timing: user_id=%s attempt_id=%s",
+            user_id,
+            attempt_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 無法確認挑戰計時，請稍後再試。",
+        )
+        return
+
+    if bool(timing.get("is_timeout")):
+        finish_challenge_session(
+            user_id,
+            line_bot_api,
+            user_sessions,
+            session,
+            force_status="timeout",
+        )
+        return
+
+    normalized_input = normalize_answer(user_input)
+
+    if normalized_input not in {"A", "B", "C", "D"}:
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰進行中，請輸入 A / B / C / D 作答。",
+        )
+        return
+
+    questions = session.get("questions", [])
+    current_index = int(session.get("current", 0))
+    question_count = int(
+        session.get("question_count")
+        or len(questions)
+    )
+
+    if current_index >= question_count:
+        finish_challenge_session(
+            user_id,
+            line_bot_api,
+            user_sessions,
+            session,
+        )
+        return
+
+    current_question = questions[current_index]
+    correct_answer = normalize_answer(
+        str(current_question.get("正解", ""))
+    )
+    is_correct = normalized_input == correct_answer
+
+    subject = str(
+        current_question.get("challenge_subject", "")
+    ).strip()
+    repo = str(
+        current_question.get("challenge_repo", "")
+    ).strip()
+
+    try:
+        save_challenge_answer(
+            int(attempt_id),
+            subject=subject,
+            repo=repo,
+            question=current_question,
+            student_answer=normalized_input,
+            correct_answer=correct_answer,
+            is_correct=is_correct,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to save challenge answer: user_id=%s attempt_id=%s question=%s",
+            user_id,
+            attempt_id,
+            current_question.get("題號", current_index + 1),
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 本題作答儲存失敗，請再輸入一次答案。",
+        )
+        return
+
+    session.setdefault("answers", []).append(
+        {
+            "題號": current_question.get(
+                "題號",
+                current_index + 1,
+            ),
+            "作答": normalized_input,
+            "正解": correct_answer,
+            "是否正確": is_correct,
+        }
+    )
+
+    session["current"] = current_index + 1
+
+    # 第 30 題完成後立即結算。
+    if session["current"] >= question_count:
+        finish_challenge_session(
+            user_id,
+            line_bot_api,
+            user_sessions,
+            session,
+        )
+        return
+
+    # 挑戰模式不顯示對錯，直接送下一題。
+    next_question = questions[session["current"]]
+    next_repo = str(
+        next_question.get("challenge_repo", "")
+    ).strip()
+
+    next_message = format_question(
+        next_question,
+        session["current"],
+        next_repo,
+    )
+
+    push_text(
+        line_bot_api,
+        user_id,
+        next_message,
     )
 
 def process_message(
@@ -521,16 +775,14 @@ def process_message(
         )
         return
 
-    # 挑戰作答尚未在本階段啟用，避免誤走一般測驗流程。
+    # 挑戰模式作答優先處理，避免誤走一般測驗流程。
     active_session = user_sessions.get(user_id) or {}
     if active_session.get("exam_mode") == "challenge":
-        push_text(
-            line_bot_api,
+        handle_challenge_answer(
+            user_input,
             user_id,
-            (
-                "🏆 挑戰模式已成功啟動並開始計時。\n"
-                "目前正在測試挑戰入口；A/B/C/D 作答功能將在下一步接上。"
-            ),
+            line_bot_api,
+            user_sessions,
         )
         return
 
