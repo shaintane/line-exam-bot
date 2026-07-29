@@ -645,13 +645,113 @@ def handle_explanation_request(
     send_text(line_bot_api, user_id, text)
 
 
+def start_exam_with_questions(
+    subject: str,
+    repo: str,
+    questions: list[dict[str, Any]],
+    user_id: str,
+    line_bot_api,
+    user_sessions: dict[str, dict[str, Any]],
+    intro_text: str | None = None,
+    session_extra: dict[str, Any] | None = None,
+) -> None:
+    """
+    使用已選好的題目建立標準測驗 session。
+
+    一般隨機測驗與弱點練習都可共用這個函式，
+    因此後續 A/B/C/D 作答、資料庫紀錄、完成統計與解析
+    都沿用同一套既有流程。
+    """
+    usable_questions = [
+        dict(question)
+        for question in questions
+        if isinstance(question, dict)
+    ]
+
+    if not usable_questions:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 目前沒有可使用的練習題目。",
+        )
+        return
+
+    selected_count = min(
+        NUM_QUESTIONS,
+        len(usable_questions),
+    )
+    usable_questions = usable_questions[:selected_count]
+
+    for index, question in enumerate(
+        usable_questions,
+        start=1,
+    ):
+        question["題號"] = index
+
+    attempt_id = None
+    try:
+        attempt = start_exam_attempt(
+            line_user_id=user_id,
+            subject=subject,
+            repo=repo,
+            question_count=selected_count,
+        )
+        attempt_id = attempt.id
+    except Exception:
+        LOGGER.exception(
+            "Exam started without database record: "
+            "user_id=%s subject=%s",
+            user_id,
+            subject,
+        )
+
+    session = {
+        "repo": repo,
+        "subject": subject,
+        "questions": usable_questions,
+        "question_count": selected_count,
+        "attempt_id": attempt_id,
+        "current": 0,
+        "answers": [],
+        "解析次數": 0,
+        "completed": False,
+    }
+
+    if session_extra:
+        session.update(session_extra)
+
+    user_sessions[user_id] = session
+
+    first_question = usable_questions[0]
+    first_message = format_question(
+        first_question,
+        0,
+        repo,
+    )
+
+    heading = (
+        intro_text.strip()
+        if intro_text
+        else (
+            f"✅ 已選擇『{subject}』科目。\n"
+            f"本次共 {selected_count} 題，開始測驗："
+        )
+    )
+
+    send_text(
+        line_bot_api,
+        user_id,
+        f"{heading}\n\n{first_message}",
+    )
+
+
 def start_exam(
     subject: str,
     user_id: str,
     line_bot_api,
     user_sessions: dict[str, dict[str, Any]],
 ) -> None:
-    """載入題庫、抽題並建立使用者測驗 session。"""
+    """載入題庫、隨機抽題並建立一般測驗 session。"""
     repo = SUBJECTS[subject]
     question_bank = load_question_bank(repo)
 
@@ -666,53 +766,22 @@ def start_exam(
         )
         return
 
-    selected_count = min(NUM_QUESTIONS, len(question_bank))
-    questions = random.sample(question_bank, selected_count)
+    selected_count = min(
+        NUM_QUESTIONS,
+        len(question_bank),
+    )
+    questions = random.sample(
+        question_bank,
+        selected_count,
+    )
 
-    for index, question in enumerate(questions, start=1):
-        question["題號"] = index
-
-    attempt_id = None
-    try:
-        attempt = start_exam_attempt(
-            line_user_id=user_id,
-            subject=subject,
-            repo=repo,
-            question_count=selected_count,
-        )
-        attempt_id = attempt.id
-    except Exception:
-        # 資料庫暫時失敗時仍允許使用者繼續測驗，
-        # 避免學習紀錄功能影響原本出題流程。
-        LOGGER.exception(
-            "Exam started without database record: user_id=%s subject=%s",
-            user_id,
-            subject,
-        )
-
-    user_sessions[user_id] = {
-        "repo": repo,
-        "subject": subject,
-        "questions": questions,
-        "question_count": selected_count,
-        "attempt_id": attempt_id,
-        "current": 0,
-        "answers": [],
-        "解析次數": 0,
-        "completed": False,
-    }
-
-    first_question = questions[0]
-    first_message = format_question(first_question, 0, repo)
-
-    send_text(
-        line_bot_api,
-        user_id,
-        (
-            f"✅ 已選擇『{subject}』科目。\n"
-            f"本次共 {selected_count} 題，開始測驗：\n\n"
-            f"{first_message}"
-        ),
+    start_exam_with_questions(
+        subject=subject,
+        repo=repo,
+        questions=questions,
+        user_id=user_id,
+        line_bot_api=line_bot_api,
+        user_sessions=user_sessions,
     )
 
 
