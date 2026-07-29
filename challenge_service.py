@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from database import db
@@ -281,6 +281,122 @@ def complete_challenge_attempt(
         LOGGER.exception(
             "Failed to complete challenge attempt: attempt_id=%s",
             attempt_id,
+        )
+        raise
+
+
+
+def finalize_expired_challenges(
+    line_user_id: str,
+) -> int:
+    """
+    將指定使用者已超過時間、仍停留在 in_progress 的挑戰自動結算為 timeout。
+
+    規則：
+    - 只處理 status == "in_progress"
+    - 若 started_at + time_limit_seconds 已超時，則自動結算
+    - timeout 的 elapsed_seconds 固定記為 time_limit_seconds
+    - 已作答題目照實計分，未作答題目視為 0 分
+    - 回傳本次自動結算的挑戰筆數
+    """
+    from models import User
+
+    user = (
+        User.query
+        .filter_by(line_user_id=line_user_id)
+        .first()
+    )
+
+    if user is None:
+        return 0
+
+    attempts = (
+        ChallengeAttempt.query
+        .filter_by(
+            user_id=user.id,
+            status="in_progress",
+        )
+        .all()
+    )
+
+    if not attempts:
+        return 0
+
+    now = utc_now()
+    finalized_count = 0
+
+    try:
+        for attempt in attempts:
+            started_at = normalize_datetime(attempt.started_at)
+            time_limit = max(
+                int(attempt.time_limit_seconds or 0),
+                0,
+            )
+
+            if time_limit <= 0:
+                continue
+
+            elapsed = int(
+                (now - started_at).total_seconds()
+            )
+
+            if elapsed < time_limit:
+                continue
+
+            answers = (
+                ChallengeAnswer.query
+                .filter_by(attempt_id=attempt.id)
+                .all()
+            )
+
+            correct_count = sum(
+                1
+                for answer in answers
+                if bool(answer.is_correct)
+            )
+
+            total = max(
+                int(attempt.question_count or 0),
+                0,
+            )
+
+            score_rate = (
+                (correct_count / total) * 100
+                if total > 0
+                else 0.0
+            )
+
+            attempt.correct_count = correct_count
+            attempt.score_rate = score_rate
+            attempt.elapsed_seconds = time_limit
+            attempt.status = "timeout"
+            attempt.completed_at = (
+                started_at
+                + timedelta(
+                    seconds=time_limit
+                )
+            )
+
+            finalized_count += 1
+
+        if finalized_count:
+            db.session.commit()
+
+            LOGGER.info(
+                "Expired challenge attempts finalized: "
+                "line_user_id=%s count=%s",
+                line_user_id,
+                finalized_count,
+            )
+
+        return finalized_count
+
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to finalize expired challenges: "
+            "line_user_id=%s",
+            line_user_id,
         )
         raise
 
