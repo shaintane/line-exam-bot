@@ -23,6 +23,7 @@ from history_service import (
 LOGGER = logging.getLogger(__name__)
 GITHUB_OWNER = "shaintane"
 NUM_QUESTIONS = 5
+ALLOWED_QUESTION_COUNTS = {5, 10, 20, 30}
 EXPLANATION_LIMIT = 3
 
 SUBJECTS = {
@@ -676,11 +677,7 @@ def start_exam_with_questions(
         )
         return
 
-    selected_count = min(
-        NUM_QUESTIONS,
-        len(usable_questions),
-    )
-    usable_questions = usable_questions[:selected_count]
+    selected_count = len(usable_questions)
 
     for index, question in enumerate(
         usable_questions,
@@ -750,8 +747,17 @@ def start_exam(
     user_id: str,
     line_bot_api,
     user_sessions: dict[str, dict[str, Any]],
+    question_count: int = NUM_QUESTIONS,
 ) -> None:
-    """載入題庫、隨機抽題並建立一般測驗 session。"""
+    """載入題庫、依使用者指定題數隨機抽題並建立一般測驗 session。"""
+    if question_count not in ALLOWED_QUESTION_COUNTS:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 題數僅能選擇 5 / 10 / 20 / 30 題。",
+        )
+        return
+
     repo = SUBJECTS[subject]
     question_bank = load_question_bank(repo)
 
@@ -767,13 +773,25 @@ def start_exam(
         return
 
     selected_count = min(
-        NUM_QUESTIONS,
+        question_count,
         len(question_bank),
     )
     questions = random.sample(
         question_bank,
         selected_count,
     )
+
+    intro_text = (
+        f"✅ 已選擇『{subject}』科目。\n"
+        f"本次共 {selected_count} 題，開始測驗："
+    )
+
+    if selected_count < question_count:
+        intro_text = (
+            f"✅ 已選擇『{subject}』科目。\n"
+            f"題庫目前可用 {selected_count} 題，"
+            f"將以 {selected_count} 題開始測驗："
+        )
 
     start_exam_with_questions(
         subject=subject,
@@ -782,6 +800,11 @@ def start_exam(
         user_id=user_id,
         line_bot_api=line_bot_api,
         user_sessions=user_sessions,
+        intro_text=intro_text,
+        session_extra={
+            "exam_mode": "standard",
+            "requested_question_count": question_count,
+        },
     )
 
 
@@ -980,16 +1003,81 @@ def handle_exam_logic(
         )
         return
 
-    # 使用者輸入科目時，可開始新測驗；完成上一份後也可直接換科。
+    # 一般測驗：已選科目、等待使用者選擇題數。
+    if session and session.get("pending_question_count"):
+        try:
+            selected_count = int(cleaned_input)
+        except (TypeError, ValueError):
+            selected_count = 0
+
+        if selected_count not in ALLOWED_QUESTION_COUNTS:
+            send_text(
+                line_bot_api,
+                user_id,
+                (
+                    "請選擇本次測驗題數：\n"
+                    "5 / 10 / 20 / 30"
+                ),
+            )
+            return
+
+        subject = str(
+            session.get("pending_subject", "")
+        ).strip()
+
+        if subject not in SUBJECTS:
+            user_sessions.pop(user_id, None)
+            send_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 科目設定已失效，請重新輸入「開始」選擇科目。",
+            )
+            return
+
+        start_exam(
+            subject=subject,
+            user_id=user_id,
+            line_bot_api=line_bot_api,
+            user_sessions=user_sessions,
+            question_count=selected_count,
+        )
+        return
+
+    # 使用者輸入科目後，不立即出題；先進入題數選擇。
     if not session or session.get("completed"):
-        subject = match_subject_name(cleaned_input, ALIASES, SUBJECTS)
+        subject = match_subject_name(
+            cleaned_input,
+            ALIASES,
+            SUBJECTS,
+        )
 
         if subject:
-            start_exam(
-                subject,
-                user_id,
+            existing_weakness = (
+                session.get("weakness_analysis")
+                if isinstance(session, dict)
+                else None
+            )
+
+            pending_session = {
+                "completed": True,
+                "pending_question_count": True,
+                "pending_subject": subject,
+                "pending_repo": SUBJECTS[subject],
+            }
+
+            if existing_weakness:
+                pending_session["weakness_analysis"] = existing_weakness
+
+            user_sessions[user_id] = pending_session
+
+            send_text(
                 line_bot_api,
-                user_sessions,
+                user_id,
+                (
+                    f"✅ 已選擇『{subject}』。\n\n"
+                    "請選擇本次測驗題數：\n"
+                    "5 / 10 / 20 / 30"
+                ),
             )
             return
 
