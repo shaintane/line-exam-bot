@@ -21,6 +21,7 @@ class AccessResult:
 
     status 可能值：
     - admin
+    - test_bypass
     - active
     - unapproved
     - disabled
@@ -163,18 +164,53 @@ def load_normalized_whitelist() -> dict[str, dict[str, Any]]:
     return normalized
 
 
-def is_admin(user_id: str) -> bool:
-    """判斷 LINE User ID 是否列於管理者環境變數。"""
-    admin_ids = {
+def load_id_set_from_env(env_name: str) -> set[str]:
+    """從逗號分隔的環境變數讀取 LINE User ID 集合。"""
+    return {
         value.strip()
         for value in os.getenv(
-            "ADMIN_LINE_USER_IDS",
+            env_name,
             "",
         ).split(",")
         if value.strip()
     }
 
-    return str(user_id or "").strip() in admin_ids
+
+def is_admin(user_id: str) -> bool:
+    """判斷 LINE User ID 是否列於管理者環境變數。"""
+    return str(user_id or "").strip() in load_id_set_from_env(
+        "ADMIN_LINE_USER_IDS"
+    )
+
+
+def is_test_bypass_user(user_id: str) -> bool:
+    """
+    判斷 LINE User ID 是否為測試 bypass 帳號。
+
+    環境變數：
+    TEST_BYPASS_LINE_USER_IDS
+
+    多個帳號可用逗號分隔。
+    """
+    return str(user_id or "").strip() in load_id_set_from_env(
+        "TEST_BYPASS_LINE_USER_IDS"
+    )
+
+
+def build_test_bypass_user(
+    user_id: str,
+) -> dict[str, Any]:
+    """建立測試 bypass 帳號的標準使用者資料。"""
+    return {
+        "line_user_id": str(user_id or "").strip(),
+        "student_id": "TEST",
+        "name": "測試帳號",
+        "school": "SYSTEM_TEST",
+        "role": "test",
+        "start_date": "",
+        "end_date": "",
+        "is_active": True,
+    }
 
 
 def check_user_access(
@@ -184,8 +220,20 @@ def check_user_access(
     """
     檢查使用者是否可進入測驗系統。
 
-    使用期限的結束日為可使用日：
-    current_date == end_date 時仍可使用；
+    判斷優先順序：
+    1. 管理者
+    2. 測試 bypass 帳號
+    3. 正式 whitelist 使用者
+
+    測試 bypass 帳號：
+    - 不需註冊
+    - 不需 approve
+    - 不檢查起訖日期
+    - 不會因期限判定為 expired
+    - 可直接進入測驗系統
+
+    正式使用者：
+    結束日當天仍可使用；
     current_date > end_date 時才判定為 expired。
     """
     cleaned_user_id = str(user_id or "").strip()
@@ -207,6 +255,25 @@ def check_user_access(
             message="",
             status="admin",
             user=admin_user,
+        )
+
+    if is_test_bypass_user(cleaned_user_id):
+        test_user = build_test_bypass_user(
+            cleaned_user_id
+        )
+
+        LOGGER.info(
+            "Test bypass access granted: line_user_id=%s",
+            cleaned_user_id,
+        )
+
+        return AccessResult(
+            allowed=True,
+            message="",
+            status="test_bypass",
+            user=test_user,
+            valid_from=None,
+            valid_until=None,
         )
 
     user = load_normalized_whitelist().get(
