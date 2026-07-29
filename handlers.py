@@ -4,12 +4,18 @@ from linebot.models import TextSendMessage
 
 from access_control import check_user_access
 from admin_logic import handle_admin_commands
-from exam_logic import handle_exam_logic
+from exam_logic import (
+    SUBJECTS,
+    handle_exam_logic,
+    load_question_bank,
+    start_exam_with_questions,
+)
 from history_service import sync_access_and_apply_retention
 from learning_history import build_learning_history_message
 from weakness_service import (
     build_weakness_analysis,
     format_weakness_analysis,
+    select_weakness_questions,
 )
 
 
@@ -137,6 +143,146 @@ def handle_weakness_analysis_command(
     )
 
 
+def handle_start_weakness_practice_command(
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+) -> None:
+    """
+    處理「開始弱點練習」。
+
+    使用最近一次弱點分析結果：
+    1. 取得建議優先科目
+    2. 載入該科既有 GitHub 題庫
+    3. 依內部 keywords/topic/subtopics 搜尋相似題
+    4. 排除弱點分析來源原錯題
+    5. 相似題不足 5 題時以同科其他題補滿
+    6. 建立標準測驗 session，沿用既有作答與資料庫流程
+    """
+    access = check_and_sync_access(user_id)
+
+    if not access.allowed:
+        user_sessions.pop(user_id, None)
+        push_text(
+            line_bot_api,
+            user_id,
+            access.message,
+        )
+        return
+
+    session = user_sessions.get(user_id) or {}
+    analysis = session.get("weakness_analysis")
+
+    if not isinstance(analysis, dict) or not analysis.get("has_data"):
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "⚠️ 尚未建立可使用的弱點分析。\n"
+                "請先輸入「弱點分析」。"
+            ),
+        )
+        return
+
+    subject = str(
+        analysis.get("priority_subject", "")
+    ).strip()
+
+    repo = str(
+        analysis.get("repo", "")
+    ).strip()
+
+    if not repo and subject in SUBJECTS:
+        repo = SUBJECTS[subject]
+
+    if not subject or not repo:
+        LOGGER.error(
+            "Weakness practice missing subject or repo: "
+            "user_id=%s subject=%s repo=%s",
+            user_id,
+            subject,
+            repo,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 弱點分析資料不完整，請重新輸入「弱點分析」。",
+        )
+        return
+
+    question_bank = load_question_bank(repo)
+
+    if not question_bank:
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "⚠️ 弱點練習題庫載入失敗。\n"
+                "請稍後再試。"
+            ),
+        )
+        return
+
+    selection = select_weakness_questions(
+        question_bank=question_bank,
+        analysis=analysis,
+        question_count=5,
+    )
+
+    questions = selection.get("questions", [])
+
+    if not questions:
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "⚠️ 目前沒有足夠的題目可建立弱點練習。\n"
+                "請稍後再試或重新進行弱點分析。"
+            ),
+        )
+        return
+
+    similar_count = int(
+        selection.get("similar_count", 0)
+    )
+    fallback_count = int(
+        selection.get("fallback_count", 0)
+    )
+
+    LOGGER.info(
+        (
+            "Starting weakness practice: "
+            "user_id=%s subject=%s repo=%s "
+            "questions=%s similar=%s fallback=%s"
+        ),
+        user_id,
+        subject,
+        repo,
+        len(questions),
+        similar_count,
+        fallback_count,
+    )
+
+    start_exam_with_questions(
+        subject=subject,
+        repo=repo,
+        questions=questions,
+        user_id=user_id,
+        line_bot_api=line_bot_api,
+        user_sessions=user_sessions,
+        intro_text=(
+            f"🎯 弱點練習：{subject}\n"
+            f"本次共 {len(questions)} 題，開始練習："
+        ),
+        session_extra={
+            "exam_mode": "weakness_practice",
+            "weakness_analysis": analysis,
+            "weakness_similar_count": similar_count,
+            "weakness_fallback_count": fallback_count,
+        },
+    )
+
+
 def process_message(
     event,
     line_bot_api,
@@ -182,6 +328,20 @@ def process_message(
             user_id,
             line_bot_api,
             client,
+            user_sessions,
+        )
+        return
+
+    # ---------------------------------------------------------
+    # 開始弱點練習
+    # ---------------------------------------------------------
+    if user_input in {
+        "開始弱點練習",
+        "弱點練習",
+    }:
+        handle_start_weakness_practice_command(
+            user_id,
+            line_bot_api,
             user_sessions,
         )
         return
