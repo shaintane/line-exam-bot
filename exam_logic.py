@@ -16,6 +16,7 @@ from history_service import (
     save_answer_record,
     save_explanation_record,
     start_exam_attempt,
+    sync_access_and_apply_retention,
 )
 
 
@@ -854,8 +855,38 @@ def handle_exam_logic(
     del registration_buffer
 
     access = check_user_access(user_id)
+
+    # 每次使用者操作時同步權限與期限。
+    # 若 access.status == "expired"，history_service 會：
+    # 1. 保留 users 基本資料
+    # 2. 將使用者狀態設為 expired
+    # 3. 刪除全部測驗、作答、錯題及 AI 解析歷程
+    try:
+        sync_access_and_apply_retention(
+            user_id,
+            access,
+        )
+    except Exception:
+        # 資料庫同步失敗時保留原本權限判定，
+        # 避免資料庫暫時異常造成整個 LINE Bot 中斷。
+        LOGGER.exception(
+            "Failed to synchronize access and retention: "
+            "user_id=%s status=%s",
+            user_id,
+            getattr(access, "status", "unknown"),
+        )
+
     if not access.allowed:
-        send_text(line_bot_api, user_id, access.message)
+        # 已過期者同時清除記憶體中的測驗 session，
+        # 避免日後重新核准時沿用舊測驗。
+        if getattr(access, "status", "") == "expired":
+            user_sessions.pop(user_id, None)
+
+        send_text(
+            line_bot_api,
+            user_id,
+            access.message,
+        )
         return
 
     cleaned_input = str(user_input).strip()
