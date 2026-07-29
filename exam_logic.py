@@ -10,6 +10,13 @@ import requests
 from linebot.models import TextSendMessage
 
 from access_control import check_user_access
+from history_service import (
+    complete_exam_attempt,
+    find_answer_record,
+    save_answer_record,
+    save_explanation_record,
+    start_exam_attempt,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -593,6 +600,37 @@ def handle_explanation_request(
         )
         return
 
+    attempt_id = session.get("attempt_id")
+    if attempt_id:
+        try:
+            answer_record = find_answer_record(
+                attempt_id=int(attempt_id),
+                question_number=question_number,
+            )
+            if answer_record:
+                save_explanation_record(
+                    answer_record_id=answer_record.id,
+                    explanation_text=explanation,
+                    model_name=os.getenv(
+                        "OPENAI_MODEL",
+                        "gpt-5-mini",
+                    ).strip(),
+                )
+            else:
+                LOGGER.warning(
+                    "Explanation not persisted because answer record was not found: "
+                    "attempt_id=%s question_number=%s",
+                    attempt_id,
+                    question_number,
+                )
+        except Exception:
+            LOGGER.exception(
+                "Explanation not persisted: user_id=%s attempt_id=%s question=%s",
+                user_id,
+                attempt_id,
+                question_number,
+            )
+
     session["解析次數"] = session.get("解析次數", 0) + 1
 
     text = f"📘 題號 {question_number} 解析：\n{explanation}"
@@ -633,11 +671,30 @@ def start_exam(
     for index, question in enumerate(questions, start=1):
         question["題號"] = index
 
+    attempt_id = None
+    try:
+        attempt = start_exam_attempt(
+            line_user_id=user_id,
+            subject=subject,
+            repo=repo,
+            question_count=selected_count,
+        )
+        attempt_id = attempt.id
+    except Exception:
+        # 資料庫暫時失敗時仍允許使用者繼續測驗，
+        # 避免學習紀錄功能影響原本出題流程。
+        LOGGER.exception(
+            "Exam started without database record: user_id=%s subject=%s",
+            user_id,
+            subject,
+        )
+
     user_sessions[user_id] = {
         "repo": repo,
         "subject": subject,
         "questions": questions,
         "question_count": selected_count,
+        "attempt_id": attempt_id,
         "current": 0,
         "answers": [],
         "解析次數": 0,
@@ -693,14 +750,35 @@ def handle_answer(
     current_question = session["questions"][current_index]
     correct_answer = normalize_answer(str(current_question.get("正解", "")))
 
+    is_correct = normalized_input == correct_answer
+
     session.setdefault("answers", []).append(
         {
             "題號": current_question.get("題號", current_index + 1),
             "作答": normalized_input,
             "正解": correct_answer,
-            "是否正確": normalized_input == correct_answer,
+            "是否正確": is_correct,
         }
     )
+
+    attempt_id = session.get("attempt_id")
+    if attempt_id:
+        try:
+            save_answer_record(
+                attempt_id=int(attempt_id),
+                question=current_question,
+                student_answer=normalized_input,
+                correct_answer=correct_answer,
+                is_correct=is_correct,
+            )
+        except Exception:
+            # 作答仍保留於目前 session；資料庫失敗不阻斷測驗。
+            LOGGER.exception(
+                "Answer not persisted: user_id=%s attempt_id=%s question=%s",
+                user_id,
+                attempt_id,
+                current_question.get("題號", current_index + 1),
+            )
 
     session["current"] = current_index + 1
 
@@ -718,6 +796,21 @@ def handle_answer(
     wrong_answers = [item for item in answers if not item.get("是否正確")]
     correct_count = len(answers) - len(wrong_answers)
     rate = round((correct_count / question_count) * 100, 1) if question_count else 0
+
+    attempt_id = session.get("attempt_id")
+    if attempt_id:
+        try:
+            complete_exam_attempt(
+                attempt_id=int(attempt_id),
+                correct_count=correct_count,
+                question_count=question_count,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Exam result not persisted: user_id=%s attempt_id=%s",
+                user_id,
+                attempt_id,
+            )
 
     summary = (
         "📩 測驗已完成\n"
