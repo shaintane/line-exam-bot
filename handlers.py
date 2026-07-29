@@ -3,9 +3,15 @@ import logging
 from linebot.models import TextSendMessage
 
 from access_control import check_user_access
+from challenge_logic import (
+    ChallengeQuestionBuildError,
+    build_challenge_questions,
+)
+from challenge_service import start_challenge_attempt
 from admin_logic import handle_admin_commands
 from exam_logic import (
     SUBJECTS,
+    format_question,
     handle_exam_logic,
     load_question_bank,
     start_exam_with_questions,
@@ -283,6 +289,153 @@ def handle_start_weakness_practice_command(
     )
 
 
+
+def handle_challenge_menu_command(
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+) -> None:
+    """顯示挑戰模式規則，等待使用者確認開始。"""
+    access = check_and_sync_access(user_id)
+
+    if not access.allowed:
+        user_sessions.pop(user_id, None)
+        push_text(
+            line_bot_api,
+            user_id,
+            access.message,
+        )
+        return
+
+    user_sessions[user_id] = {
+        "completed": True,
+        "challenge_pending": True,
+        "exam_mode": "challenge_pending",
+    }
+
+    push_text(
+        line_bot_api,
+        user_id,
+        (
+            "🏆 挑戰模式\n\n"
+            "題數：30 題\n"
+            "科目：六科各 5 題\n"
+            "時間：23 分鐘\n"
+            "排名：先比答對題數，同分再比完成時間\n\n"
+            "挑戰結果不納入一般學習歷程與弱點分析。\n"
+            "開始後計時不中斷。\n\n"
+            "準備好後請輸入：開始挑戰"
+        ),
+    )
+
+
+def handle_start_challenge_command(
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+) -> None:
+    """
+    建立 30 題挑戰題組與 ChallengeAttempt，並送出第 1 題。
+
+    本階段只建立挑戰入口；A/B/C/D 作答與結算會在下一階段接上。
+    """
+    access = check_and_sync_access(user_id)
+
+    if not access.allowed:
+        user_sessions.pop(user_id, None)
+        push_text(
+            line_bot_api,
+            user_id,
+            access.message,
+        )
+        return
+
+    existing_session = user_sessions.get(user_id) or {}
+
+    if not existing_session.get("challenge_pending"):
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "⚠️ 請先輸入「挑戰模式」查看規則，"
+                "再輸入「開始挑戰」。"
+            ),
+        )
+        return
+
+    try:
+        questions = build_challenge_questions()
+    except ChallengeQuestionBuildError as exc:
+        LOGGER.exception(
+            "Failed to build challenge questions: user_id=%s",
+            user_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            f"⚠️ {exc}",
+        )
+        return
+    except Exception:
+        LOGGER.exception(
+            "Unexpected challenge question build error: user_id=%s",
+            user_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰題組建立失敗，請稍後再試。",
+        )
+        return
+
+    try:
+        attempt = start_challenge_attempt(
+            line_user_id=user_id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to start challenge attempt: user_id=%s",
+            user_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 挑戰紀錄建立失敗，請稍後再試。",
+        )
+        return
+
+    user_sessions[user_id] = {
+        "exam_mode": "challenge",
+        "challenge_attempt_id": attempt.id,
+        "questions": questions,
+        "question_count": len(questions),
+        "current": 0,
+        "answers": [],
+        "completed": False,
+    }
+
+    first_question = questions[0]
+    first_repo = str(
+        first_question.get("challenge_repo", "")
+    ).strip()
+
+    first_message = format_question(
+        first_question,
+        0,
+        first_repo,
+    )
+
+    push_text(
+        line_bot_api,
+        user_id,
+        (
+            "🏆 挑戰開始！\n"
+            "30 題｜23 分鐘\n"
+            "計時已開始，中途離開不會暫停。\n\n"
+            f"{first_message}"
+        ),
+    )
+
 def process_message(
     event,
     line_bot_api,
@@ -347,6 +500,41 @@ def process_message(
         return
 
     # ---------------------------------------------------------
+    # 挑戰模式
+    # ---------------------------------------------------------
+    if user_input in {
+        "挑戰模式",
+        "挑戰賽",
+    }:
+        handle_challenge_menu_command(
+            user_id,
+            line_bot_api,
+            user_sessions,
+        )
+        return
+
+    if user_input == "開始挑戰":
+        handle_start_challenge_command(
+            user_id,
+            line_bot_api,
+            user_sessions,
+        )
+        return
+
+    # 挑戰作答尚未在本階段啟用，避免誤走一般測驗流程。
+    active_session = user_sessions.get(user_id) or {}
+    if active_session.get("exam_mode") == "challenge":
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "🏆 挑戰模式已成功啟動並開始計時。\n"
+                "目前正在測試挑戰入口；A/B/C/D 作答功能將在下一步接上。"
+            ),
+        )
+        return
+
+    # ---------------------------------------------------------
     # 進入測驗選單
     # ---------------------------------------------------------
     if user_input in {
@@ -372,7 +560,8 @@ def process_message(
                 "一般測驗可選 5 / 10 / 20 / 30 題。\n\n"
                 "例如輸入：微生物\n\n"
                 "查看個人紀錄請輸入：學習歷程\n"
-                "分析近期錯題請輸入：弱點分析"
+                "分析近期錯題請輸入：弱點分析\n"
+                "進入遊戲化測驗請輸入：挑戰模式"
             ),
         )
         return
