@@ -1,7 +1,9 @@
 import difflib
+import json
 import logging
 import os
 import random
+import re
 from typing import Any
 
 import requests
@@ -316,49 +318,209 @@ def format_question(question: dict[str, Any], index: int, repo: str) -> str:
     return text
 
 
+EXTENSION_PHRASES = (
+    "如果你要",
+    "如果你需要",
+    "如果你願意",
+    "如果需要",
+    "如果願意",
+    "若你要",
+    "若你需要",
+    "若你願意",
+    "如有需要",
+    "如需更多",
+    "我也可以幫你",
+    "我也可以",
+    "我可以幫你",
+    "我可以再幫你",
+    "需要我幫你",
+    "需要我再",
+    "要不要我幫你",
+    "歡迎再詢問",
+    "歡迎繼續詢問",
+)
+
+
+def truncate_extension(text: str) -> str:
+    """遇到主動延伸或邀請句時，刪除該句及其後全部文字。"""
+    if not text:
+        return ""
+
+    cut_position = len(text)
+    for phrase in EXTENSION_PHRASES:
+        position = text.find(phrase)
+        if position != -1:
+            cut_position = min(cut_position, position)
+
+    return text[:cut_position].strip()
+
+
+def clean_plain_text(value: Any) -> str:
+    """移除 Markdown、延伸邀請與不必要格式，保留純文字內容。"""
+    if value is None:
+        return ""
+
+    text = truncate_extension(str(value))
+
+    # 移除 Markdown 標題、粗斜體、反引號與分隔線。
+    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    text = re.sub(r"(?m)^\s*[-_*]{3,}\s*$", "", text)
+
+    cleaned_lines: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        line = re.sub(r"^[-*•]+\s*", "", line)
+        if line:
+            cleaned_lines.append(line)
+
+    text = "\n".join(cleaned_lines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def first_sentence(text: str) -> str:
+    """只保留第一個完整句子，供國考重點使用。"""
+    cleaned = clean_plain_text(text)
+    if not cleaned:
+        return ""
+
+    match = re.search(r"^.*?[。！？!?](?:\s|$)", cleaned, flags=re.S)
+    if match:
+        return match.group(0).strip()
+
+    first_line = cleaned.splitlines()[0].strip()
+    return first_line
+
+
 def generate_explanation(
     client,
     question: dict[str, Any],
     student_answer: str,
 ) -> str | None:
-    """使用 OpenAI 產生題目解析。"""
-    correct_answer = str(question.get("正解", ""))
-    question_text = str(question.get("題目", ""))
+    """
+    以 Structured Outputs 取得固定欄位，再由 Python 組成 LINE 純文字。
+    模型自由文字不會直接傳送給使用者。
+    """
+    correct_answer = normalize_answer(str(question.get("正解", "")))
+    question_text = str(question.get("題目", "")).strip()
     options = question.get("選項", [])
+    model_name = os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
 
-    prompt = (
-        "你是一位國考輔導老師，請針對下列題目進行解析：\n"
-        f"題目：{question_text}\n"
-        f"選項：{'、'.join(str(option) for option in options)}\n"
-        f"學生作答：{student_answer}\n"
-        f"正確答案：{correct_answer}\n"
-        "請指出學生是否正確，並簡要解釋為什麼正解正確，"
-        "以及錯誤選項常見的迷思點。"
+    if not question_text or not isinstance(options, list) or not options or not correct_answer:
+        LOGGER.error("Explanation input incomplete: question=%s", question)
+        return None
+
+    option_text = "\n".join(str(option) for option in options)
+    student_answer_normalized = normalize_answer(student_answer)
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "core_explanation": {
+                "type": "string",
+                "description": "說明正確答案的判斷依據與必要背景知識。",
+            },
+            "option_analysis": {
+                "type": "string",
+                "description": "說明學生所選選項，並視需要辨析其他選項。",
+            },
+            "conclusion": {
+                "type": "string",
+                "description": "明確總結學生答案與正確答案的差異。",
+            },
+            "exam_tip": {
+                "type": "string",
+                "description": "一句國考鑑別或記憶重點。",
+            },
+        },
+        "required": [
+            "core_explanation",
+            "option_analysis",
+            "conclusion",
+            "exam_tip",
+        ],
+        "additionalProperties": False,
+    }
+
+    system_message = (
+        "你是一位專業且謹慎的醫事檢驗師國家考試解析教師。"
+        "只解析目前這一題。題庫指定答案為本次評分答案。"
+        "使用繁體中文，不得提供其他題目、比較表、額外教材、後續邀請或服務。"
+        "不得詢問使用者是否需要更多內容。"
+        "所有欄位只填解析內容，不要加入 Markdown、井字號、星號、分隔線或欄位標題。"
+        "exam_tip 僅能有一句話。"
+    )
+
+    user_message = (
+        f"題目：\n{question_text}\n\n"
+        f"選項：\n{option_text}\n\n"
+        f"學生作答：{student_answer_normalized}\n"
+        f"題庫正確答案：{correct_answer}\n\n"
+        "請完整解析本題。核心解析需說明正解理由；"
+        "選項辨析先處理學生所選答案，再視需要補充其他選項；"
+        "結論需明確；國考重點只寫一句。"
     )
 
     try:
+        LOGGER.info("Generating structured explanation: model=%s", model_name)
+
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            model=model_name,
             messages=[
-                {
-                    "role": "system",
-                    "content": "你是一位專業且謹慎的醫學檢驗國考解析導師。",
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
             ],
-            timeout=20,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "exam_explanation",
+                    "description": "醫事檢驗師國考單題解析",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            },
+            timeout=30,
         )
 
         content = response.choices[0].message.content
-        return content.strip() if content else None
+        if not content:
+            LOGGER.error("OpenAI returned empty structured explanation")
+            return None
 
+        data = json.loads(content)
+        core = clean_plain_text(data.get("core_explanation", ""))
+        option_analysis = clean_plain_text(data.get("option_analysis", ""))
+        conclusion = clean_plain_text(data.get("conclusion", ""))
+        exam_tip = first_sentence(str(data.get("exam_tip", "")))
+
+        if not core or not conclusion or not exam_tip:
+            LOGGER.error("Structured explanation missing required usable content: %s", data)
+            return None
+
+        result = "正確" if student_answer_normalized == correct_answer else "錯誤"
+
+        explanation = (
+            f"作答結果：{result}\n"
+            f"正確答案：{correct_answer}\n\n"
+            f"核心解析：\n{core}\n\n"
+            f"選項辨析：\n{option_analysis or '本題無需額外辨析。'}\n\n"
+            f"結論：\n{conclusion}\n\n"
+            f"國考重點：\n{exam_tip}"
+        )
+
+        # 最後一道防線：整段再次移除延伸句及格式符號。
+        explanation = clean_plain_text(explanation)
+
+        LOGGER.info("Structured explanation generated successfully: model=%s", model_name)
+        return explanation or None
+
+    except json.JSONDecodeError:
+        LOGGER.exception("Structured explanation JSON decoding failed")
     except Exception:
-        LOGGER.exception("Failed to generate explanation")
-        return None
+        LOGGER.exception("Failed to generate structured explanation")
 
+    return None
 
 def handle_explanation_request(
     user_input: str,
@@ -419,6 +581,15 @@ def handle_explanation_request(
             line_bot_api,
             user_id,
             "⚠️ 無法生成解析，請稍後再試。",
+        )
+        return
+
+    explanation = clean_plain_text(explanation)
+    if not explanation:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 解析內容格式異常，請稍後再試。",
         )
         return
 
