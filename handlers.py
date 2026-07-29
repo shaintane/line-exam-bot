@@ -301,7 +301,7 @@ def handle_challenge_menu_command(
     line_bot_api,
     user_sessions,
 ) -> None:
-    """顯示挑戰模式規則，等待使用者確認開始。"""
+    """顯示單頁挑戰模式規則，等待使用者輸入「開始挑戰」。"""
     access = check_and_sync_access(user_id)
 
     if not access.allowed:
@@ -329,7 +329,11 @@ def handle_challenge_menu_command(
             "時間：23 分鐘\n"
             "排名：先比答對題數，同分再比完成時間\n\n"
             "挑戰結果不納入一般學習歷程與弱點分析\n\n"
-            "準備好後請輸入：開始挑戰"
+            "🏆 說明\n\n"
+            "作答後不顯示對錯，會直接進入下一題\n"
+            "正式開始後，中途離開時間不會暫停\n\n"
+            "準備好後請輸入「開始挑戰」\n"
+            "輸入後立即啟動計時並出第 1 題"
         ),
     )
 
@@ -339,12 +343,7 @@ def handle_start_challenge_command(
     line_bot_api,
     user_sessions,
 ) -> None:
-    """
-    準備 30 題挑戰題組，但尚不開始計時。
-
-    使用者輸入 S 後才建立 ChallengeAttempt，
-    此時才正式記錄 started_at 並送出第 1 題。
-    """
+    """建立 30 題、立即開始計時，並送出第 1 題。"""
     access = check_and_sync_access(user_id)
 
     if not access.allowed:
@@ -362,10 +361,7 @@ def handle_start_challenge_command(
         push_text(
             line_bot_api,
             user_id,
-            (
-                "⚠️ 請先輸入「挑戰模式」查看規則，"
-                "再輸入「開始挑戰」。"
-            ),
+            "⚠️ 請先輸入「挑戰模式」查看規則。",
         )
         return
 
@@ -394,58 +390,6 @@ def handle_start_challenge_command(
         )
         return
 
-    user_sessions[user_id] = {
-        "exam_mode": "challenge_ready",
-        "challenge_ready": True,
-        "questions": questions,
-        "question_count": len(questions),
-        "current": 0,
-        "answers": [],
-        "completed": False,
-    }
-
-    push_text(
-        line_bot_api,
-        user_id,
-        (
-            "🏆 挑戰說明\n\n"
-            "作答後不顯示對錯，會直接進入下一題\n"
-            "正式開始後，中途離開時間不會暫停\n\n"
-            "準備好後請輸入 S（無大小寫限制）\n"
-            "輸入 S 後才開始計時並出第 1 題"
-        ),
-    )
-
-
-def handle_confirm_challenge_start(
-    user_id: str,
-    line_bot_api,
-    user_sessions,
-) -> None:
-    """使用者輸入 S 後正式開始計時並送出第 1 題。"""
-    session = user_sessions.get(user_id) or {}
-
-    if (
-        session.get("exam_mode") != "challenge_ready"
-        or not session.get("challenge_ready")
-    ):
-        push_text(
-            line_bot_api,
-            user_id,
-            "⚠️ 請先輸入「挑戰模式」→「開始挑戰」。",
-        )
-        return
-
-    questions = session.get("questions", [])
-    if not questions:
-        push_text(
-            line_bot_api,
-            user_id,
-            "⚠️ 挑戰題組不存在，請重新輸入「挑戰模式」。",
-        )
-        user_sessions.pop(user_id, None)
-        return
-
     try:
         attempt = start_challenge_attempt(
             line_user_id=user_id,
@@ -462,12 +406,15 @@ def handle_confirm_challenge_start(
         )
         return
 
-    session["exam_mode"] = "challenge"
-    session["challenge_ready"] = False
-    session["challenge_attempt_id"] = attempt.id
-    session["current"] = 0
-    session["answers"] = []
-    session["completed"] = False
+    user_sessions[user_id] = {
+        "exam_mode": "challenge",
+        "challenge_attempt_id": attempt.id,
+        "questions": questions,
+        "question_count": len(questions),
+        "current": 0,
+        "answers": [],
+        "completed": False,
+    }
 
     first_question = questions[0]
     first_repo = str(
@@ -815,26 +762,8 @@ def process_message(
         )
         return
 
-    if user_input.upper() == "S":
-        active_session = user_sessions.get(user_id) or {}
-        if active_session.get("exam_mode") == "challenge_ready":
-            handle_confirm_challenge_start(
-                user_id,
-                line_bot_api,
-                user_sessions,
-            )
-            return
-
     # 挑戰模式作答優先處理，避免誤走一般測驗流程。
     active_session = user_sessions.get(user_id) or {}
-
-    if active_session.get("exam_mode") == "challenge_ready":
-        push_text(
-            line_bot_api,
-            user_id,
-            "🏆 挑戰已準備完成，請輸入 S 開始計時並出第 1 題。",
-        )
-        return
 
     if active_session.get("exam_mode") == "challenge":
         handle_challenge_answer(
