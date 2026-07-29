@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+
 LOGGER = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 WHITELIST_FILE = BASE_DIR / "whitelist.json"
@@ -15,98 +16,273 @@ DATE_FORMAT = "%Y-%m-%d"
 
 @dataclass(frozen=True)
 class AccessResult:
+    """
+    使用者權限檢查結果。
+
+    status 可能值：
+    - admin
+    - active
+    - unapproved
+    - disabled
+    - invalid_dates
+    - not_started
+    - expired
+    """
+
     allowed: bool
     message: str
+    status: str
     user: dict[str, Any] | None = None
+    valid_from: date | None = None
+    valid_until: date | None = None
 
 
 def load_json(path: Path) -> dict[str, Any]:
+    """安全讀取 JSON 物件；檔案不存在或格式錯誤時回傳空字典。"""
     try:
         if not path.exists():
             return {}
+
         with path.open("r", encoding="utf-8") as file:
             data = json.load(file)
+
         return data if isinstance(data, dict) else {}
+
     except (OSError, json.JSONDecodeError) as exc:
-        LOGGER.exception("Failed to load JSON file %s: %s", path, exc)
+        LOGGER.exception(
+            "Failed to load JSON file %s: %s",
+            path,
+            exc,
+        )
         return {}
 
 
 def save_json(path: Path, data: dict[str, Any]) -> None:
+    """以暫存檔原子方式安全寫入 JSON。"""
     temp_path = path.with_suffix(path.suffix + ".tmp")
+
     with temp_path.open("w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+        json.dump(
+            data,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
     temp_path.replace(path)
 
 
-def parse_date(value: str) -> date | None:
+def parse_date(value: Any) -> date | None:
+    """將 YYYY-MM-DD 文字轉為 date；格式錯誤時回傳 None。"""
     try:
-        return datetime.strptime(value, DATE_FORMAT).date()
+        return datetime.strptime(
+            str(value).strip(),
+            DATE_FORMAT,
+        ).date()
     except (TypeError, ValueError):
         return None
 
 
-def normalize_user_record(key: str, raw: dict[str, Any]) -> dict[str, Any]:
-    """Accept both the legacy Chinese schema and the new English schema."""
+def normalize_user_record(
+    key: str,
+    raw: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    同時相容舊中文欄位與新英文欄位，
+    並統一成資料庫可使用的英文欄位名稱。
+    """
     line_user_id = (
         raw.get("line_user_id")
         or raw.get("line_id")
         or raw.get("LINE_ID")
         or (key if str(key).startswith("U") else "")
     )
+
+    student_id = (
+        raw.get("student_id")
+        or raw.get("學號")
+        or (key if not str(key).startswith("U") else "")
+    )
+
+    start_date = (
+        raw.get("start_date")
+        or raw.get("valid_from")
+        or raw.get("起始日")
+        or ""
+    )
+
+    end_date = (
+        raw.get("end_date")
+        or raw.get("valid_until")
+        or raw.get("結束日")
+        or ""
+    )
+
     return {
-        "line_user_id": line_user_id,
-        "student_id": raw.get("student_id") or raw.get("學號") or (key if not str(key).startswith("U") else ""),
-        "name": raw.get("name") or raw.get("姓名") or "未命名使用者",
-        "school": raw.get("school") or raw.get("學校") or "",
-        "role": raw.get("role") or "student",
-        "start_date": raw.get("start_date") or raw.get("起始日") or "",
-        "end_date": raw.get("end_date") or raw.get("結束日") or "",
-        "is_active": raw.get("is_active", True),
+        "line_user_id": str(line_user_id or "").strip(),
+        "student_id": str(student_id or "").strip(),
+        "name": str(
+            raw.get("name")
+            or raw.get("姓名")
+            or "未命名使用者"
+        ).strip(),
+        "school": str(
+            raw.get("school")
+            or raw.get("學校")
+            or ""
+        ).strip(),
+        "role": str(
+            raw.get("role")
+            or "student"
+        ).strip(),
+        "start_date": str(start_date or "").strip(),
+        "end_date": str(end_date or "").strip(),
+        "is_active": bool(
+            raw.get("is_active", True)
+        ),
     }
 
 
 def load_normalized_whitelist() -> dict[str, dict[str, Any]]:
+    """讀取 whitelist.json，並以 LINE User ID 為索引。"""
     normalized: dict[str, dict[str, Any]] = {}
+
     for key, raw in load_json(WHITELIST_FILE).items():
         if not isinstance(raw, dict):
             continue
-        record = normalize_user_record(str(key), raw)
+
+        record = normalize_user_record(
+            str(key),
+            raw,
+        )
         line_user_id = record["line_user_id"]
+
         if line_user_id:
             normalized[line_user_id] = record
+
     return normalized
 
 
 def is_admin(user_id: str) -> bool:
+    """判斷 LINE User ID 是否列於管理者環境變數。"""
     admin_ids = {
         value.strip()
-        for value in os.getenv("ADMIN_LINE_USER_IDS", "").split(",")
+        for value in os.getenv(
+            "ADMIN_LINE_USER_IDS",
+            "",
+        ).split(",")
         if value.strip()
     }
-    return user_id in admin_ids
+
+    return str(user_id or "").strip() in admin_ids
 
 
-def check_user_access(user_id: str, today: date | None = None) -> AccessResult:
-    if is_admin(user_id):
-        return AccessResult(True, "", {"line_user_id": user_id, "role": "admin", "name": "管理者"})
+def check_user_access(
+    user_id: str,
+    today: date | None = None,
+) -> AccessResult:
+    """
+    檢查使用者是否可進入測驗系統。
 
-    user = load_normalized_whitelist().get(user_id)
+    使用期限的結束日為可使用日：
+    current_date == end_date 時仍可使用；
+    current_date > end_date 時才判定為 expired。
+    """
+    cleaned_user_id = str(user_id or "").strip()
+
+    if is_admin(cleaned_user_id):
+        admin_user = {
+            "line_user_id": cleaned_user_id,
+            "student_id": "",
+            "name": "管理者",
+            "school": "",
+            "role": "admin",
+            "start_date": "",
+            "end_date": "",
+            "is_active": True,
+        }
+
+        return AccessResult(
+            allowed=True,
+            message="",
+            status="admin",
+            user=admin_user,
+        )
+
+    user = load_normalized_whitelist().get(
+        cleaned_user_id
+    )
+
     if not user:
-        return AccessResult(False, "🔒 你的帳號尚未通過審核。請輸入「註冊」開始申請。")
+        return AccessResult(
+            allowed=False,
+            message=(
+                "🔒 你的帳號尚未通過審核。"
+                "請輸入「註冊」開始申請。"
+            ),
+            status="unapproved",
+        )
+
+    start_date = parse_date(
+        user.get("start_date", "")
+    )
+    end_date = parse_date(
+        user.get("end_date", "")
+    )
 
     if not user.get("is_active", True):
-        return AccessResult(False, "⛔ 此帳號目前已停用，請聯絡管理者。", user)
+        return AccessResult(
+            allowed=False,
+            message="⛔ 此帳號目前已停用，請聯絡管理者。",
+            status="disabled",
+            user=user,
+            valid_from=start_date,
+            valid_until=end_date,
+        )
 
-    start_date = parse_date(user.get("start_date", ""))
-    end_date = parse_date(user.get("end_date", ""))
     if not start_date or not end_date:
-        return AccessResult(False, "⚠️ 帳號使用期限設定有誤，請聯絡管理者。", user)
+        return AccessResult(
+            allowed=False,
+            message="⚠️ 帳號使用期限設定有誤，請聯絡管理者。",
+            status="invalid_dates",
+            user=user,
+            valid_from=start_date,
+            valid_until=end_date,
+        )
 
     current_date = today or date.today()
-    if current_date < start_date:
-        return AccessResult(False, f"⏳ 帳號將於 {start_date.isoformat()} 開放使用。", user)
-    if current_date > end_date:
-        return AccessResult(False, f"⌛ 帳號使用期限已於 {end_date.isoformat()} 結束。", user)
 
-    return AccessResult(True, "", user)
+    if current_date < start_date:
+        return AccessResult(
+            allowed=False,
+            message=(
+                f"⏳ 帳號將於 "
+                f"{start_date.isoformat()} 開放使用。"
+            ),
+            status="not_started",
+            user=user,
+            valid_from=start_date,
+            valid_until=end_date,
+        )
+
+    if current_date > end_date:
+        return AccessResult(
+            allowed=False,
+            message=(
+                f"⌛ 帳號使用期限已於 "
+                f"{end_date.isoformat()} 結束。"
+            ),
+            status="expired",
+            user=user,
+            valid_from=start_date,
+            valid_until=end_date,
+        )
+
+    return AccessResult(
+        allowed=True,
+        message="",
+        status="active",
+        user=user,
+        valid_from=start_date,
+        valid_until=end_date,
+    )
