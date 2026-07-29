@@ -9,6 +9,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from openai import OpenAI
 
 from database import db, init_database
+from messaging import ReplyFirstLineBotApi
 import models  # noqa: F401
 
 
@@ -22,19 +23,23 @@ LOGGER = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# 初始化 PostgreSQL，並在啟動時執行一次 SELECT 1 連線測試。
 init_database(app)
 
-# 載入 models.py 後建立尚不存在的資料表。
 with app.app_context():
     db.create_all()
     LOGGER.info(
         "Database tables created or verified successfully."
     )
 
-line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+base_line_bot_api = LineBotApi(
+    os.getenv("CHANNEL_ACCESS_TOKEN")
+)
+handler = WebhookHandler(
+    os.getenv("CHANNEL_SECRET")
+)
+openai_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 user_sessions = {}
 registration_buffer = {}
@@ -47,33 +52,54 @@ def health_check():
         "service": "line-exam-bot",
         "database": "connected",
         "tables": "ready",
+        "messaging": "reply-first",
     }, 200
 
 
 @app.post("/callback")
 def callback():
-    signature = request.headers.get("X-Line-Signature")
+    signature = request.headers.get(
+        "X-Line-Signature"
+    )
+
     if not signature:
         abort(400)
 
-    body = request.get_data(as_text=True)
+    body = request.get_data(
+        as_text=True
+    )
 
     try:
-        handler.handle(body, signature)
+        handler.handle(
+            body,
+            signature,
+        )
     except InvalidSignatureError:
         abort(400)
 
     return "OK"
 
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(
+    MessageEvent,
+    message=TextMessage,
+)
 def handle_message(event):
     from handlers import process_message
+
+    event_line_bot_api = ReplyFirstLineBotApi(
+        base_api=base_line_bot_api,
+        reply_token=getattr(
+            event,
+            "reply_token",
+            None,
+        ),
+    )
 
     try:
         process_message(
             event,
-            line_bot_api,
+            event_line_bot_api,
             openai_client,
             user_sessions,
             registration_buffer,
@@ -84,7 +110,7 @@ def handle_message(event):
         )
 
         try:
-            line_bot_api.push_message(
+            event_line_bot_api.push_message(
                 event.source.user_id,
                 TextSendMessage(
                     text="⚠️ 系統暫時無法處理，請稍後再試。"
@@ -99,5 +125,10 @@ def handle_message(event):
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
-        port=int(os.getenv("PORT", "8080")),
+        port=int(
+            os.getenv(
+                "PORT",
+                "8080",
+            )
+        ),
     )
