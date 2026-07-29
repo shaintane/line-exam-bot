@@ -8,7 +8,8 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from openai import OpenAI
 
-from database import init_database
+from database import db, init_database
+import models  # noqa: F401
 
 
 load_dotenv()
@@ -24,6 +25,13 @@ app = Flask(__name__)
 # 初始化 PostgreSQL，並在啟動時執行一次 SELECT 1 連線測試。
 init_database(app)
 
+# 載入 models.py 後建立尚不存在的資料表。
+with app.app_context():
+    db.create_all()
+    LOGGER.info(
+        "Database tables created or verified successfully."
+    )
+
 line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -38,6 +46,7 @@ def health_check():
         "status": "ok",
         "service": "line-exam-bot",
         "database": "connected",
+        "tables": "ready",
     }, 200
 
 
