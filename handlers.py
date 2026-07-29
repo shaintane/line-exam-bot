@@ -484,15 +484,10 @@ def handle_confirm_challenge_start(
         line_bot_api,
         user_id,
         (
-            "⏱️ 計時開始！\\n"
-            "23 分鐘挑戰正式開始。"
+            "⏱️ 計時開始！\n"
+            "23 分鐘挑戰正式開始。\n\n"
+            f"{first_message}"
         ),
-    )
-
-    push_text(
-        line_bot_api,
-        user_id,
-        first_message,
     )
 
 def format_elapsed_time(seconds: int) -> str:
