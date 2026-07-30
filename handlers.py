@@ -2,6 +2,8 @@ import logging
 
 from linebot.models import TextSendMessage
 
+from messaging import answer_quick_reply, subject_quick_reply
+
 from access_control import check_user_access
 from challenge_logic import (
     ChallengeQuestionBuildError,
@@ -49,6 +51,14 @@ def push_text(
         user_id,
         TextSendMessage(text=text),
     )
+
+def push_message(
+    line_bot_api,
+    user_id: str,
+    message,
+) -> None:
+    """傳送已建立完成的 LINE message object。"""
+    line_bot_api.push_message(user_id, message)
 
 
 def check_and_sync_access(
@@ -603,10 +613,10 @@ def handle_start_challenge_command(
         first_repo,
     )
 
-    push_text(
+    push_message(
         line_bot_api,
         user_id,
-        (
+        answer_quick_reply(
             "⏱️ 計時開始！\n"
             "23 分鐘挑戰正式開始。\n\n"
             f"{first_message}"
@@ -803,10 +813,10 @@ def handle_challenge_answer(
     normalized_input = normalize_answer(user_input)
 
     if normalized_input not in {"A", "B", "C", "D"}:
-        push_text(
+        push_message(
             line_bot_api,
             user_id,
-            "⚠️ 挑戰進行中，請輸入 A / B / C / D 作答。",
+            answer_quick_reply("⚠️ 挑戰進行中，請選擇 A / B / C / D 作答。"),
         )
         return
 
@@ -899,10 +909,10 @@ def handle_challenge_answer(
         next_repo,
     )
 
-    push_text(
+    push_message(
         line_bot_api,
         user_id,
-        next_message,
+        answer_quick_reply(next_message),
     )
 
 def process_message(
@@ -1077,33 +1087,22 @@ def process_message(
         return
 
     # ---------------------------------------------------------
-    # 進入測驗選單
+    # 進入一般測驗：以 Quick Reply 選擇六科
     # ---------------------------------------------------------
     if user_input in {
         "開始",
+        "一般測驗",
         "選單",
         "主選單",
         "menu",
         "Menu",
         "MENU",
     }:
-        push_text(
+        push_message(
             line_bot_api,
             user_id,
-            (
-                "📚 國考測驗系統\n\n"
-                "請輸入想練習的科目：\n\n"
-                "1️⃣ 微生物\n"
-                "2️⃣ 免疫\n"
-                "3️⃣ 血液\n"
-                "4️⃣ 生化\n"
-                "5️⃣ 分子\n"
-                "6️⃣ 病理\n\n"
-                "一般測驗可選 5 / 10 / 20 / 30 題。\n\n"
-                "例如輸入：微生物\n\n"
-                "查看個人紀錄請輸入：學習歷程\n"
-                "分析近期錯題請輸入：弱點分析\n"
-                "進入遊戲化測驗請輸入：挑戰模式"
+            subject_quick_reply(
+                "📚 一般測驗\n\n請選擇想練習的科目："
             ),
         )
         return
