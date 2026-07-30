@@ -679,6 +679,14 @@ def finish_challenge_session(
     session["completed"] = True
     session["challenge_status"] = attempt.status
 
+    # 挑戰一旦完成，就不能再被當成進行中的 challenge session。
+    # 否則「主選單／排行榜／我的排名」等文字會被誤送進 A/B/C/D 作答流程。
+    user_sessions[user_id] = {
+        "completed": True,
+        "exam_mode": "challenge_completed",
+        "challenge_status": attempt.status,
+    }
+
     answered_count = len(session.get("answers", []))
     total = int(attempt.question_count or 30)
     correct = int(attempt.correct_count or 0)
