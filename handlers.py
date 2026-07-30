@@ -6,6 +6,7 @@ from messaging import answer_quick_reply, subject_quick_reply
 from flex_messages import (
     build_challenge_flex,
     build_home_flex,
+    build_leaderboard_flex,
     build_personal_learning_flex,
 )
 
@@ -969,10 +970,12 @@ def process_message(
         "Top10",
         "TOP10",
     }:
-        push_text(
+        rows = get_challenge_leaderboard(limit=10)
+
+        push_message(
             line_bot_api,
             user_id,
-            build_leaderboard_text(),
+            build_leaderboard_flex(rows),
         )
         return
 
