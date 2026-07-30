@@ -8,7 +8,12 @@ import time
 from typing import Any
 
 import requests
-from linebot.models import TextSendMessage
+from linebot.models import (
+    MessageAction,
+    QuickReply,
+    QuickReplyButton,
+    TextSendMessage,
+)
 from messaging import answer_quick_reply, question_count_quick_reply
 
 from access_control import check_user_access
@@ -58,6 +63,36 @@ def send_text(line_bot_api, user_id: str, text: str) -> None:
         TextSendMessage(text=text),
     )
 
+
+
+
+def explanation_quick_reply(
+    text: str,
+    question_count: int,
+):
+    """
+    5 題測驗完成後提供題 1～題 5 的解析 Quick Reply。
+
+    點擊後仍送出既有「題號N」指令，因此不改動 AI 解析核心。
+    其他題數維持原本可手動輸入「題號N」的方式。
+    """
+    if int(question_count or 0) != 5:
+        return TextSendMessage(text=text)
+
+    items = [
+        QuickReplyButton(
+            action=MessageAction(
+                label=f"題{number}",
+                text=f"題號{number}",
+            )
+        )
+        for number in range(1, 6)
+    ]
+
+    return TextSendMessage(
+        text=text,
+        quick_reply=QuickReply(items=items),
+    )
 
 def normalize_answer(answer: str) -> str:
     """將全形、大小寫與句點等答案格式統一。"""
@@ -647,7 +682,22 @@ def handle_explanation_request(
     if image_url:
         text += f"\n\n🔗 圖片：{image_url}"
 
-    send_text(line_bot_api, user_id, text)
+    remaining = EXPLANATION_LIMIT - session.get("解析次數", 0)
+
+    if remaining > 0 and int(session.get("question_count") or 0) == 5:
+        text += (
+            f"\n\n🤖 尚可解析 {remaining} 題，"
+            "請直接點選下方題號。"
+        )
+        line_bot_api.push_message(
+            user_id,
+            explanation_quick_reply(
+                text,
+                int(session.get("question_count") or 0),
+            ),
+        )
+    else:
+        send_text(line_bot_api, user_id, text)
 
 
 def start_exam_with_questions(
@@ -937,13 +987,31 @@ def handle_answer(
     else:
         summary += "🎉 全部答對！"
 
-    summary += (
-        "\n\n💡 查看解析請輸入：題號3"
-        "\n📚 選擇其他科目請輸入：開始"
-    )
+    if question_count == 5:
+        summary += (
+            "\n\n🤖 AI 解析：請點選想查看的題目"
+            f"（本次最多 {EXPLANATION_LIMIT} 題）"
+            "\n📚 選擇其他科目請輸入：開始"
+        )
+    else:
+        summary += (
+            f"\n\n💡 AI 解析上限為 {EXPLANATION_LIMIT} 題，"
+            "請輸入例如：題號3"
+            "\n📚 選擇其他科目請輸入：開始"
+        )
 
     session["completed"] = True
-    send_text(line_bot_api, user_id, summary)
+
+    if question_count == 5:
+        line_bot_api.push_message(
+            user_id,
+            explanation_quick_reply(
+                summary,
+                question_count,
+            ),
+        )
+    else:
+        send_text(line_bot_api, user_id, summary)
 
 
 def handle_exam_logic(
