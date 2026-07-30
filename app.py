@@ -124,7 +124,7 @@ def handle_follow(event):
                 QuickReplyButton(
                     action=MessageAction(
                         label="👤 註冊",
-                        text="註冊",
+                        text="開始註冊",
                     )
                 )
             ]
