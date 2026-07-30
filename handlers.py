@@ -10,8 +10,12 @@ from challenge_logic import (
 from challenge_service import (
     complete_challenge_attempt,
     finalize_expired_challenges,
+    get_challenge_leaderboard,
+    get_challenge_profile,
     get_challenge_timing,
+    get_personal_challenge_summary,
     save_challenge_answer,
+    set_challenge_nickname,
     start_challenge_attempt,
 )
 from admin_logic import handle_admin_commands
@@ -297,12 +301,183 @@ def handle_start_weakness_practice_command(
 
 
 
+
+def challenge_time_text(seconds: int) -> str:
+    total = max(int(seconds or 0), 0)
+    minutes, secs = divmod(total, 60)
+    return f"{minutes}分{secs:02d}秒"
+
+
+def build_challenge_menu_text(
+    nickname: str,
+) -> str:
+    return (
+        f"🏆 挑戰模式｜{nickname}\n\n"
+        "題數：30 題\n"
+        "科目：六科各 5 題\n"
+        "時間：23 分鐘\n"
+        "排名：先比答對題數，同分再比完成時間\n\n"
+        "挑戰結果不納入一般學習歷程與弱點分析\n\n"
+        "🏆 說明\n\n"
+        "作答後不顯示對錯，會直接進入下一題\n"
+        "正式開始後，中途離開時間不會暫停\n\n"
+        "準備好後請輸入「開始挑戰」\n"
+        "輸入後立即啟動計時並出第 1 題\n\n"
+        "其他指令：排行榜／我的排名"
+    )
+
+
+def build_leaderboard_text() -> str:
+    rows = get_challenge_leaderboard(limit=10)
+
+    if not rows:
+        return (
+            "🏆 挑戰模式歷史排行榜\n\n"
+            "目前還沒有完成的挑戰紀錄。"
+        )
+
+    lines = ["🏆 挑戰模式歷史排行榜", ""]
+
+    titles = {
+        1: "神級人物",
+        2: "國考大神",
+        3: "超強挑戰者",
+    }
+
+    medals = {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉",
+    }
+
+    for row in rows:
+        rank = int(row["rank"])
+        prefix = medals.get(rank, f"{rank}.")
+        title = titles.get(rank)
+        title_text = f"｜{title}" if title else ""
+
+        lines.append(
+            f"{prefix} {row['nickname']} "
+            f"{row['correct_count']}/{row['question_count']} "
+            f"｜{challenge_time_text(row['elapsed_seconds'])}"
+            f"{title_text}"
+        )
+
+    return "\n".join(lines)
+
+
+def build_personal_rank_text(
+    user_id: str,
+) -> str:
+    summary = get_personal_challenge_summary(user_id)
+
+    if not summary.get("has_record"):
+        return (
+            "🏆 我的挑戰紀錄\n\n"
+            "目前還沒有完成的挑戰成績。"
+        )
+
+    rank = summary.get("rank")
+    rank_text = (
+        f"第 {rank} 名"
+        if rank is not None
+        else "尚未排名"
+    )
+
+    nickname = summary.get("nickname") or "未設定暱稱"
+
+    extra = (
+        "\n\n🔥 成功進入 Top 10！"
+        if rank is not None and rank <= 10
+        else "\n\n請繼續努力，刷新你的最佳紀錄！💪"
+    )
+
+    return (
+        f"🏆 {nickname} 的歷史最佳\n\n"
+        f"最佳成績：{summary['correct_count']} / "
+        f"{summary['question_count']}\n"
+        f"正確率：{summary['score_rate']}%\n"
+        f"最佳時間："
+        f"{challenge_time_text(summary['elapsed_seconds'])}\n"
+        f"目前排名：{rank_text}"
+        f"{extra}"
+    )
+
+
+
+def handle_challenge_nickname_input(
+    nickname: str,
+    user_id: str,
+    line_bot_api,
+    user_sessions,
+) -> None:
+    nickname = str(nickname or "").strip()
+
+    reserved = {
+        "開始挑戰",
+        "挑戰模式",
+        "挑戰賽",
+        "排行榜",
+        "挑戰排行榜",
+        "我的排名",
+        "修改暱稱",
+    }
+
+    if nickname in reserved:
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 這個文字不能當作暱稱，請換一個。",
+        )
+        return
+
+    try:
+        profile = set_challenge_nickname(
+            user_id,
+            nickname,
+        )
+    except ValueError as exc:
+        push_text(
+            line_bot_api,
+            user_id,
+            f"⚠️ {exc}",
+        )
+        return
+    except Exception:
+        LOGGER.exception(
+            "Failed to set challenge nickname: user_id=%s",
+            user_id,
+        )
+        push_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 暱稱儲存失敗，請稍後再試。",
+        )
+        return
+
+    user_sessions[user_id] = {
+        "completed": True,
+        "challenge_pending": True,
+        "exam_mode": "challenge_pending",
+    }
+
+    push_text(
+        line_bot_api,
+        user_id,
+        (
+            f"✅ 排行榜暱稱已設定為：{profile.nickname}\n\n"
+            "你已正式顯示在 Top 10 排行榜。\n"
+            "輸入「排行榜」即可查看。"
+        ),
+    )
+
+
 def handle_challenge_menu_command(
     user_id: str,
     line_bot_api,
     user_sessions,
 ) -> None:
-    """顯示單頁挑戰模式規則，等待使用者輸入「開始挑戰」。"""
+    """顯示挑戰模式，不預先要求設定暱稱。"""
     access = check_and_sync_access(user_id)
 
     if not access.allowed:
@@ -517,6 +692,60 @@ def finish_challenge_session(
             "排行榜與個人最佳紀錄將在下一階段接上。"
         )
 
+    try:
+        personal = get_personal_challenge_summary(
+            user_id
+        )
+
+        if personal.get("has_record"):
+            rank = personal.get("rank")
+            rank_text = (
+                f"第 {rank} 名"
+                if rank is not None
+                else "尚未排名"
+            )
+
+            if rank is not None and rank <= 10:
+                encourage = "🔥 成功進入 Top 10！"
+            else:
+                encourage = (
+                    "請繼續努力，刷新你的最佳紀錄！💪"
+                )
+
+            result_text += (
+                "\n\n🏆 歷史最佳"
+                f"\n{personal['correct_count']} / "
+                f"{personal['question_count']}"
+                f"\n最佳時間："
+                f"{challenge_time_text(personal['elapsed_seconds'])}"
+                f"\n目前排名：{rank_text}"
+                f"\n\n{encourage}"
+            )
+
+            if (
+                rank is not None
+                and rank <= 10
+                and not personal.get("has_profile")
+            ):
+                user_sessions[user_id] = {
+                    "completed": True,
+                    "exam_mode": "challenge_nickname_pending",
+                    "challenge_nickname_pending": True,
+                }
+
+                result_text += (
+                    "\n\n🎉 你已進入 Top 10！"
+                    "\n請直接輸入排行榜暱稱，"
+                    "設定後就會顯示在排行榜。"
+                )
+
+    except Exception:
+        LOGGER.exception(
+            "Failed to append personal challenge ranking: "
+            "user_id=%s",
+            user_id,
+        )
+
     push_text(
         line_bot_api,
         user_id,
@@ -717,6 +946,50 @@ def process_message(
             "user_id=%s",
             user_id,
         )
+
+    # ---------------------------------------------------------
+    # 挑戰排行榜 / 個人最佳 / 修改暱稱
+    # ---------------------------------------------------------
+    if user_input in {
+        "排行榜",
+        "挑戰排行榜",
+        "Top10",
+        "TOP10",
+    }:
+        push_text(
+            line_bot_api,
+            user_id,
+            build_leaderboard_text(),
+        )
+        return
+
+    if user_input in {
+        "我的排名",
+        "我的挑戰",
+        "挑戰紀錄",
+    }:
+        push_text(
+            line_bot_api,
+            user_id,
+            build_personal_rank_text(user_id),
+        )
+        return
+
+    # ---------------------------------------------------------
+    # Top 10 使用者設定排行榜暱稱
+    # ---------------------------------------------------------
+    active_session = user_sessions.get(user_id) or {}
+
+    if active_session.get(
+        "exam_mode"
+    ) == "challenge_nickname_pending":
+        handle_challenge_nickname_input(
+            user_input,
+            user_id,
+            line_bot_api,
+            user_sessions,
+        )
+        return
 
     # ---------------------------------------------------------
     # 顯示目前使用者的 LINE User ID
