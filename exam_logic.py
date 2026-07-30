@@ -9,6 +9,7 @@ from typing import Any
 
 import requests
 from linebot.models import TextSendMessage
+from messaging import answer_quick_reply
 
 from access_control import check_user_access
 from history_service import (
@@ -739,10 +740,11 @@ def start_exam_with_questions(
         )
     )
 
-    send_text(
-        line_bot_api,
+    line_bot_api.push_message(
         user_id,
-        f"{heading}\n\n{first_message}",
+        answer_quick_reply(
+            f"{heading}\n\n{first_message}"
+        ),
     )
 
 
@@ -837,10 +839,11 @@ def handle_answer(
     normalized_input = normalize_answer(user_input)
 
     if normalized_input not in {"A", "B", "C", "D"}:
-        send_text(
-            line_bot_api,
+        line_bot_api.push_message(
             user_id,
-            "⚠️ 請填入 A / B / C / D 作為答案。",
+            answer_quick_reply(
+                "⚠️ 請選擇 A / B / C / D 作答。"
+            ),
         )
         return
 
@@ -889,7 +892,10 @@ def handle_answer(
             session["current"],
             str(session.get("repo", "")),
         )
-        send_text(line_bot_api, user_id, next_message)
+        line_bot_api.push_message(
+            user_id,
+            answer_quick_reply(next_message),
+        )
         return
 
     answers = session.get("answers", [])
