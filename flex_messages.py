@@ -20,7 +20,7 @@ def build_home_flex():
             spacing="md",
             contents=[
                 TextComponent(
-                    text="醫事檢驗師國考學習系統",
+                    text="國軍桃園醫檢師智能國考學習系統",
                     weight="bold",
                     size="xl",
                     wrap=True,
@@ -43,8 +43,8 @@ def build_home_flex():
                     style="primary",
                     margin="sm",
                     action=MessageAction(
-                        label="📚 一般測驗",
-                        text="一般測驗",
+                        label="📚 測驗與AI導師",
+                        text="測驗與AI導師",
                     ),
                 ),
                 ButtonComponent(
@@ -76,7 +76,7 @@ def build_home_flex():
     )
 
     return FlexSendMessage(
-        alt_text="醫事檢驗師國考學習系統主選單",
+        alt_text="國軍桃園醫檢師智能國考學習系統主選單",
         contents=bubble,
     )
 
