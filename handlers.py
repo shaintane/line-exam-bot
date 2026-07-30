@@ -579,11 +579,6 @@ def handle_start_challenge_command(
         )
         return
 
-    push_text(
-        line_bot_api,
-        user_id,
-        "⏳ 挑戰題目準備中，請稍候…",
-    )
 
     try:
         questions = build_challenge_questions()
