@@ -43,6 +43,30 @@ def send(line_bot_api, user_id, text):
     )
 
 
+def get_rich_menu_id():
+    """從環境變數取得 Rich Menu ID。"""
+    return os.getenv("RICH_MENU_ID", "").strip()
+
+
+def link_rich_menu_to_user(line_bot_api, line_user_id):
+    """
+    將 Rich Menu 綁定到指定 LINE User ID。
+
+    若未設定 RICH_MENU_ID，回傳 False；
+    綁定成功回傳 True。
+    """
+    rich_menu_id = get_rich_menu_id()
+
+    if not rich_menu_id:
+        return False
+
+    line_bot_api.link_rich_menu_to_user(
+        line_user_id,
+        rich_menu_id,
+    )
+    return True
+
+
 def get_admin_ids():
     """
     從 Render 環境變數取得管理者 LINE User ID。
@@ -410,31 +434,68 @@ def handle_admin_commands(
             ),
         )
 
-        # 通知學生；即使通知失敗，也不回滾核准結果
+        # 通知學生；即使通知或 Rich Menu 綁定失敗，也不回滾核准結果。
+        notify_failed = False
+        rich_menu_failed = False
+
         try:
             send(
                 line_bot_api,
                 line_user_id,
                 (
                     "✅ 帳號已通過審核！\n\n"
-                    "歡迎使用國考解析助手。\n"
-                    "請輸入「開始」進入測驗選單。"
+                    f"姓名：{record['name']}\n"
+                    f"學校：{record['school']}\n"
+                    f"學號：{record['student_id']}\n"
+                    f"使用期限：{record['start_date']} ～ {record['end_date']}\n\n"
+                    "歡迎使用國軍桃園醫檢師國考智慧學習系統。"
                 ),
             )
         except Exception as error:
+            notify_failed = True
             print(
                 "Failed to notify approved user:",
                 line_user_id,
                 repr(error),
             )
 
+        try:
+            linked = link_rich_menu_to_user(
+                line_bot_api,
+                line_user_id,
+            )
+
+            if not linked:
+                rich_menu_failed = True
+                print(
+                    "RICH_MENU_ID is not configured; "
+                    "approved user was not linked to Rich Menu:",
+                    line_user_id,
+                )
+
+        except Exception as error:
+            rich_menu_failed = True
+            print(
+                "Failed to link Rich Menu to approved user:",
+                line_user_id,
+                repr(error),
+            )
+
+        if notify_failed or rich_menu_failed:
+            warning_lines = [
+                "⚠️ 核准已完成，但有後續動作未成功："
+            ]
+
+            if notify_failed:
+                warning_lines.append("・無法傳送核准通知給學生")
+
+            if rich_menu_failed:
+                warning_lines.append("・無法綁定 Rich Menu")
+
             send(
                 line_bot_api,
                 user_id,
-                (
-                    "⚠️ 核准已完成，但無法傳送通知給學生。\n"
-                    "請確認學生 LINE User ID 是否有效。"
-                ),
+                "\n".join(warning_lines),
             )
 
         return True
