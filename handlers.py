@@ -8,8 +8,10 @@ from flex_messages import (
     build_challenge_result_flex,
     build_home_flex,
     build_leaderboard_flex,
+    build_learning_history_flex,
     build_personal_learning_flex,
     build_personal_rank_flex,
+    build_weakness_analysis_flex,
 )
 
 from access_control import check_user_access
@@ -114,10 +116,10 @@ def handle_learning_history_command(
         user_id
     )
 
-    push_text(
+    push_message(
         line_bot_api,
         user_id,
-        message,
+        build_learning_history_flex(message),
     )
 
 
@@ -171,10 +173,13 @@ def handle_weakness_analysis_command(
         analysis
     )
 
-    push_text(
+    push_message(
         line_bot_api,
         user_id,
-        message,
+        build_weakness_analysis_flex(
+            message,
+            has_data=bool(analysis.get("has_data")),
+        ),
     )
 
 
