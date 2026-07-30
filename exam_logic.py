@@ -4,16 +4,16 @@ import logging
 import os
 import random
 import re
+import time
 from typing import Any
 
 import requests
 from linebot.models import TextSendMessage
 
-from messaging import answer_quick_reply, question_count_quick_reply
-
 from access_control import check_user_access
 from history_service import (
     complete_exam_attempt,
+    discard_exam_attempt,
     find_answer_record,
     save_answer_record,
     save_explanation_record,
@@ -27,6 +27,7 @@ GITHUB_OWNER = "shaintane"
 NUM_QUESTIONS = 5
 ALLOWED_QUESTION_COUNTS = {5, 10, 20, 30}
 EXPLANATION_LIMIT = 3
+EXAM_IDLE_TIMEOUT_SECONDS = 5 * 60
 
 SUBJECTS = {
     "臨床血清免疫學": "examimmun",
@@ -55,10 +56,6 @@ def send_text(line_bot_api, user_id: str, text: str) -> None:
         user_id,
         TextSendMessage(text=text),
     )
-
-def send_message(line_bot_api, user_id: str, message) -> None:
-    """傳送已建立完成的 LINE message object。"""
-    line_bot_api.push_message(user_id, message)
 
 
 def normalize_answer(answer: str) -> str:
@@ -718,6 +715,7 @@ def start_exam_with_questions(
         "answers": [],
         "解析次數": 0,
         "completed": False,
+        "last_activity_at": time.time(),
     }
 
     if session_extra:
@@ -741,10 +739,10 @@ def start_exam_with_questions(
         )
     )
 
-    send_message(
+    send_text(
         line_bot_api,
         user_id,
-        answer_quick_reply(f"{heading}\n\n{first_message}"),
+        f"{heading}\n\n{first_message}",
     )
 
 
@@ -839,12 +837,15 @@ def handle_answer(
     normalized_input = normalize_answer(user_input)
 
     if normalized_input not in {"A", "B", "C", "D"}:
-        send_message(
+        send_text(
             line_bot_api,
             user_id,
-            answer_quick_reply("⚠️ 請選擇 A / B / C / D 作為答案。"),
+            "⚠️ 請填入 A / B / C / D 作為答案。",
         )
         return
+
+    # 只有有效 A/B/C/D 作答才算一次活動並重設 5 分鐘閒置計時。
+    session["last_activity_at"] = time.time()
 
     current_question = session["questions"][current_index]
     correct_answer = normalize_answer(str(current_question.get("正解", "")))
@@ -888,11 +889,7 @@ def handle_answer(
             session["current"],
             str(session.get("repo", "")),
         )
-        send_message(
-            line_bot_api,
-            user_id,
-            answer_quick_reply(next_message),
-        )
+        send_text(line_bot_api, user_id, next_message)
         return
 
     answers = session.get("answers", [])
@@ -994,6 +991,60 @@ def handle_exam_logic(
     cleaned_input = str(user_input).strip()
     session = user_sessions.get(user_id)
 
+    # ---------------------------------------------------------
+    # 一般測驗 / 弱點練習：5 分鐘閒置逾時
+    # ---------------------------------------------------------
+    # 採 lazy timeout：不使用背景排程。
+    # 使用者下一次互動時才檢查距離上次有效作答是否已超過 5 分鐘。
+    # 挑戰模式不經由此流程，因此不受此規則影響。
+    if (
+        isinstance(session, dict)
+        and not session.get("completed")
+        and session.get("exam_mode") in {
+            "standard",
+            "weakness_practice",
+        }
+    ):
+        last_activity_at = session.get("last_activity_at")
+
+        try:
+            idle_seconds = (
+                time.time() - float(last_activity_at)
+                if last_activity_at is not None
+                else 0
+            )
+        except (TypeError, ValueError):
+            idle_seconds = 0
+
+        if idle_seconds > EXAM_IDLE_TIMEOUT_SECONDS:
+            attempt_id = session.get("attempt_id")
+
+            if attempt_id:
+                try:
+                    discard_exam_attempt(int(attempt_id))
+                except Exception:
+                    # 即使資料庫清除暫時失敗，仍先終止記憶體中的測驗，
+                    # 避免使用者繼續作答舊 session。
+                    LOGGER.exception(
+                        "Timed-out exam attempt could not be discarded: "
+                        "user_id=%s attempt_id=%s",
+                        user_id,
+                        attempt_id,
+                    )
+
+            user_sessions.pop(user_id, None)
+
+            send_text(
+                line_bot_api,
+                user_id,
+                (
+                    "⏰ 本次測驗因閒置超過 5 分鐘已中斷。\n"
+                    "本次未完成作答不列入學習歷程與弱點分析。\n\n"
+                    "請輸入「開始」重新選擇測驗。"
+                ),
+            )
+            return
+
     # 「題號3」可在完成測驗後執行，因此必須先於新測驗判斷。
     if cleaned_input.startswith("題號"):
         if not session:
@@ -1021,11 +1072,12 @@ def handle_exam_logic(
             selected_count = 0
 
         if selected_count not in ALLOWED_QUESTION_COUNTS:
-            send_message(
+            send_text(
                 line_bot_api,
                 user_id,
-                question_count_quick_reply(
-                    "請選擇本次測驗題數："
+                (
+                    "請選擇本次測驗題數：\n"
+                    "5 / 10 / 20 / 30"
                 ),
             )
             return
@@ -1079,11 +1131,13 @@ def handle_exam_logic(
 
             user_sessions[user_id] = pending_session
 
-            send_message(
+            send_text(
                 line_bot_api,
                 user_id,
-                question_count_quick_reply(
-                    f"✅ 已選擇『{subject}』。\n\n請選擇本次測驗題數："
+                (
+                    f"✅ 已選擇『{subject}』。\n\n"
+                    "請選擇本次測驗題數：\n"
+                    "5 / 10 / 20 / 30"
                 ),
             )
             return
