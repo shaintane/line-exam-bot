@@ -1016,7 +1016,22 @@ def process_message(
             "挑戰模式",
             "挑戰賽",
             "一般測驗",
+            "測驗與AI導師",
+            "測驗與 AI 導師",
             "個人學習",
+            "學習歷程",
+            "我的成績",
+            "弱點分析",
+            "分析弱點",
+            "開始弱點練習",
+            "弱點練習",
+            "註冊",
+            "註冊選單",
+            "註冊／會員",
+            "開始註冊",
+            "申請",
+            "我要註冊",
+            "核准名單",
         }
 
         if user_input not in nickname_navigation_commands:
@@ -1027,6 +1042,10 @@ def process_message(
                 user_sessions,
             )
             return
+
+        # 使用者已選擇離開暱稱輸入流程，清除舊的 nickname pending session，
+        # 避免後續主選單按鈕再次被誤判為排行榜暱稱。
+        user_sessions.pop(user_id, None)
 
     # ---------------------------------------------------------
     # 顯示目前使用者的 LINE User ID
@@ -1238,12 +1257,16 @@ def process_message(
     # ---------------------------------------------------------
     # 一般測驗：以 Quick Reply 選擇六科
     # ---------------------------------------------------------
-    if user_input == "一般測驗":
+    if user_input in {
+        "一般測驗",
+        "測驗與AI導師",
+        "測驗與 AI 導師",
+    }:
         push_message(
             line_bot_api,
             user_id,
             subject_quick_reply(
-                "📚 一般測驗\n\n請選擇想練習的科目："
+                "📚 測驗與 AI 導師\n\n請選擇想練習的科目："
             ),
         )
         return
