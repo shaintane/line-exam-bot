@@ -9,8 +9,11 @@ from flex_messages import (
     build_home_flex,
     build_leaderboard_flex,
     build_learning_history_flex,
+    build_my_registration_flex,
     build_personal_learning_flex,
     build_personal_rank_flex,
+    build_registration_form_flex,
+    build_registration_menu_flex,
     build_weakness_analysis_flex,
 )
 
@@ -30,7 +33,14 @@ from challenge_service import (
     set_challenge_nickname,
     start_challenge_attempt,
 )
-from admin_logic import handle_admin_commands
+from admin_logic import (
+    WHITELIST_FILE,
+    find_record,
+    handle_admin_commands,
+    is_admin,
+    load_json,
+    normalize_record,
+)
 from exam_logic import (
     SUBJECTS,
     format_question,
@@ -1019,6 +1029,67 @@ def process_message(
         return
 
     # ---------------------------------------------------------
+    # 註冊 Flex
+    # ---------------------------------------------------------
+    if user_input in {
+        "註冊",
+        "註冊選單",
+        "註冊／會員",
+    }:
+        registration_buffer.pop(user_id, None)
+
+        push_message(
+            line_bot_api,
+            user_id,
+            build_registration_menu_flex(),
+        )
+        return
+
+    if user_input in {
+        "開始註冊",
+        "申請",
+        "我要註冊",
+    }:
+        registration_buffer[user_id] = "awaiting_info"
+
+        push_message(
+            line_bot_api,
+            user_id,
+            build_registration_form_flex(),
+        )
+        return
+
+    if user_input == "核准名單":
+        registration_buffer.pop(user_id, None)
+
+        # 管理者沿用既有完整白名單管理輸出。
+        if is_admin(user_id):
+            handle_admin_commands(
+                "show whitelist",
+                user_id,
+                line_bot_api,
+                registration_buffer,
+            )
+            return
+
+        # 一般使用者只能查看自己的姓名、學校與使用期限。
+        whitelist = load_json(WHITELIST_FILE)
+        _, record = find_record(
+            whitelist,
+            user_id,
+        )
+
+        if record is not None:
+            record = normalize_record(record)
+
+        push_message(
+            line_bot_api,
+            user_id,
+            build_my_registration_flex(record),
+        )
+        return
+
+    # ---------------------------------------------------------
     # 個人學習 Flex
     # ---------------------------------------------------------
     if user_input == "個人學習":
@@ -1133,6 +1204,8 @@ def process_message(
         "Menu",
         "MENU",
     }:
+        registration_buffer.pop(user_id, None)
+
         push_message(
             line_bot_api,
             user_id,
