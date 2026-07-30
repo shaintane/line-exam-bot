@@ -5,6 +5,7 @@ from linebot.models import TextSendMessage
 from messaging import answer_quick_reply, subject_quick_reply
 from flex_messages import (
     build_challenge_flex,
+    build_challenge_result_flex,
     build_home_flex,
     build_leaderboard_flex,
     build_personal_learning_flex,
@@ -645,7 +646,7 @@ def finish_challenge_session(
     *,
     force_status: str | None = None,
 ) -> None:
-    """完成挑戰、寫入資料庫並顯示本次結果。"""
+    """完成挑戰、寫入資料庫並以 Flex 顯示本次結果。"""
     attempt_id = session.get("challenge_attempt_id")
 
     if not attempt_id:
@@ -682,91 +683,53 @@ def finish_challenge_session(
     total = int(attempt.question_count or 30)
     correct = int(attempt.correct_count or 0)
     rate = float(attempt.score_rate or 0.0)
-    elapsed_text = format_elapsed_time(
-        int(attempt.elapsed_seconds or 0)
-    )
+    elapsed_seconds = int(attempt.elapsed_seconds or 0)
 
-    if attempt.status == "timeout":
-        title = "⏰ 挑戰時間到！"
-    else:
-        title = "🏆 挑戰完成！"
-
-    if attempt.status == "timeout":
-        result_text = (
-            f"{title}\n\n"
-            f"已完成：{answered_count} / {total} 題\n"
-            f"答對題數：{correct} / {total}\n"
-            f"正確率：{rate}%\n"
-            f"完成時間：{elapsed_text}\n\n"
-        )
-    else:
-        result_text = (
-            f"{title}\n\n"
-            f"答對題數：{correct} / {total}\n"
-            f"正確率：{rate}%\n"
-            f"完成時間：{elapsed_text}\n\n"
-        )
+    personal = None
+    needs_nickname = False
 
     try:
-        personal = get_personal_challenge_summary(
-            user_id
+        personal = get_personal_challenge_summary(user_id)
+
+        rank = (
+            personal.get("rank")
+            if personal and personal.get("has_record")
+            else None
         )
 
-        if personal.get("has_record"):
-            rank = personal.get("rank")
-            rank_text = (
-                f"第 {rank} 名"
-                if rank is not None
-                else "尚未排名"
-            )
+        if (
+            rank is not None
+            and rank <= 10
+            and not personal.get("has_profile")
+        ):
+            needs_nickname = True
 
-            if rank is not None and rank <= 10:
-                encourage = "🔥 成功進入 Top 10！"
-            else:
-                encourage = (
-                    "請繼續努力，刷新你的最佳紀錄！💪"
-                )
-
-            result_text += (
-                "\n\n🏆 歷史最佳"
-                f"\n{personal['correct_count']} / "
-                f"{personal['question_count']}"
-                f"\n最佳時間："
-                f"{challenge_time_text(personal['elapsed_seconds'])}"
-                f"\n目前排名：{rank_text}"
-                f"\n\n{encourage}"
-            )
-
-            if (
-                rank is not None
-                and rank <= 10
-                and not personal.get("has_profile")
-            ):
-                user_sessions[user_id] = {
-                    "completed": True,
-                    "exam_mode": "challenge_nickname_pending",
-                    "challenge_nickname_pending": True,
-                }
-
-                result_text += (
-                    "\n\n🎉 你已進入 Top 10！"
-                    "\n請直接輸入排行榜暱稱，"
-                    "設定後就會顯示在排行榜。"
-                )
+            user_sessions[user_id] = {
+                "completed": True,
+                "exam_mode": "challenge_nickname_pending",
+                "challenge_nickname_pending": True,
+            }
 
     except Exception:
         LOGGER.exception(
-            "Failed to append personal challenge ranking: "
-            "user_id=%s",
+            "Failed to load personal challenge ranking: user_id=%s",
             user_id,
         )
 
-    push_text(
+    push_message(
         line_bot_api,
         user_id,
-        result_text,
+        build_challenge_result_flex(
+            status=attempt.status,
+            answered_count=answered_count,
+            total=total,
+            correct=correct,
+            rate=rate,
+            elapsed_seconds=elapsed_seconds,
+            personal=personal,
+            needs_nickname=needs_nickname,
+        ),
     )
-
 
 def handle_challenge_answer(
     user_input: str,
@@ -1002,13 +965,34 @@ def process_message(
     if active_session.get(
         "exam_mode"
     ) == "challenge_nickname_pending":
-        handle_challenge_nickname_input(
-            user_input,
-            user_id,
-            line_bot_api,
-            user_sessions,
-        )
-        return
+        nickname_navigation_commands = {
+            "開始",
+            "選單",
+            "主選單",
+            "menu",
+            "Menu",
+            "MENU",
+            "排行榜",
+            "挑戰排行榜",
+            "Top10",
+            "TOP10",
+            "我的排名",
+            "我的挑戰",
+            "挑戰紀錄",
+            "挑戰模式",
+            "挑戰賽",
+            "一般測驗",
+            "個人學習",
+        }
+
+        if user_input not in nickname_navigation_commands:
+            handle_challenge_nickname_input(
+                user_input,
+                user_id,
+                line_bot_api,
+                user_sessions,
+            )
+            return
 
     # ---------------------------------------------------------
     # 顯示目前使用者的 LINE User ID
