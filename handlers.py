@@ -925,6 +925,34 @@ def process_message(
     user_id = event.source.user_id
     user_input = event.message.text.strip()
 
+    # ---------------------------------------------------------
+    # 使用期限到期：首次互動時立即停權並解除 Rich Menu
+    # ---------------------------------------------------------
+    access = check_and_sync_access(user_id)
+
+    if getattr(access, "status", "") == "expired":
+        user_sessions.pop(user_id, None)
+        registration_buffer.pop(user_id, None)
+
+        try:
+            line_bot_api.unlink_rich_menu_from_user(user_id)
+        except Exception:
+            # 即使解除 Rich Menu 失敗，也仍阻擋已到期帳號繼續使用。
+            LOGGER.exception(
+                "Failed to unlink Rich Menu for expired user: user_id=%s",
+                user_id,
+            )
+
+        push_text(
+            line_bot_api,
+            user_id,
+            (
+                "⏰ 您的使用期限已結束，系統功能已停止使用。\n"
+                "如需繼續使用，請洽管理者。"
+            ),
+        )
+        return
+
     # 每次收到使用者訊息時，先補結算已超過 23 分鐘、
     # 但仍停留在 in_progress 的挑戰紀錄。
     try:
