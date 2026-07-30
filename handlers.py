@@ -8,6 +8,7 @@ from flex_messages import (
     build_home_flex,
     build_leaderboard_flex,
     build_personal_learning_flex,
+    build_personal_rank_flex,
 )
 
 from access_control import check_user_access
@@ -984,10 +985,12 @@ def process_message(
         "我的挑戰",
         "挑戰紀錄",
     }:
-        push_text(
+        summary = get_personal_challenge_summary(user_id)
+
+        push_message(
             line_bot_api,
             user_id,
-            build_personal_rank_text(user_id),
+            build_personal_rank_flex(summary),
         )
         return
 
