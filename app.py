@@ -5,7 +5,15 @@ from dotenv import load_dotenv
 from flask import Flask, abort, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage
+from linebot.models import (
+    FollowEvent,
+    MessageAction,
+    MessageEvent,
+    QuickReply,
+    QuickReplyButton,
+    TextMessage,
+    TextSendMessage,
+)
 from openai import OpenAI
 
 from database import db, init_database
@@ -89,6 +97,56 @@ def callback():
         abort(400)
 
     return "OK"
+
+
+@handler.add(FollowEvent)
+def handle_follow(event):
+    """
+    新使用者加入 LINE 官方帳號時：
+    1. 顯示歡迎訊息
+    2. 下方只提供「👤 註冊」Quick Reply
+    """
+
+    welcome_text = (
+        "👋 歡迎加入「國軍桃園醫檢師國考智慧學習系統」！\n\n"
+        "這裡不只是題庫，更是你的 AI 國考學習夥伴 🤖📚\n"
+        "透過科目測驗、AI 導師解析、弱點分析與挑戰模式，"
+        "幫你找出不熟的地方，一題一題練到會。\n\n"
+        "每天進步一點、弱點少一點，國考就離你更近一點！\n"
+        "🎯 目標只有一個：金榜題名！\n\n"
+        "👇 請先點選「註冊」完成申請，核准後即可開始使用。"
+    )
+
+    message = TextSendMessage(
+        text=welcome_text,
+        quick_reply=QuickReply(
+            items=[
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="👤 註冊",
+                        text="註冊",
+                    )
+                )
+            ]
+        ),
+    )
+
+    try:
+        base_line_bot_api.reply_message(
+            event.reply_token,
+            message,
+        )
+
+        LOGGER.info(
+            "Follow welcome message sent: user_id=%s",
+            event.source.user_id,
+        )
+
+    except Exception:
+        LOGGER.exception(
+            "Failed to send FollowEvent welcome message: user_id=%s",
+            getattr(event.source, "user_id", "unknown"),
+        )
 
 
 @handler.add(
