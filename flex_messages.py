@@ -1000,7 +1000,7 @@ def build_registration_menu_flex():
 
 
 def build_registration_form_flex():
-    """建立註冊資料填寫說明 Flex。"""
+    """建立註冊資料填寫說明 Flex；可複製格式另以純文字傳送。"""
 
     bubble = BubbleContainer(
         body=BoxComponent(
@@ -1014,38 +1014,9 @@ def build_registration_form_flex():
                     wrap=True,
                 ),
                 TextComponent(
-                    text="請依下列格式直接輸入一行資料。",
+                    text="請參考下方範例填寫資料，並將資料直接送出。",
                     size="sm",
                     color="#888888",
-                    margin="sm",
-                    wrap=True,
-                ),
-                SeparatorComponent(
-                    margin="lg",
-                ),
-                TextComponent(
-                    text="填寫格式",
-                    weight="bold",
-                    size="md",
-                    margin="lg",
-                    wrap=True,
-                ),
-                TextComponent(
-                    text=(
-                        "學校：\n"
-                        "姓名：\n"
-                        "學號：\n"
-                        "起始日：\n"
-                        "結束日："
-                    ),
-                    size="md",
-                    margin="sm",
-                    wrap=True,
-                ),
-                TextComponent(
-                    text="日期格式：YYYY-MM-DD",
-                    size="sm",
-                    color="#666666",
                     margin="sm",
                     wrap=True,
                 ),
@@ -1072,10 +1043,17 @@ def build_registration_form_flex():
                     wrap=True,
                 ),
                 TextComponent(
-                    text="輸入完成後直接送出即可。",
+                    text="日期格式：YYYY-MM-DD",
                     size="sm",
                     color="#666666",
                     margin="lg",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="下方會再提供可直接複製的填寫格式。",
+                    size="sm",
+                    color="#666666",
+                    margin="sm",
                     wrap=True,
                 ),
             ],
@@ -1086,7 +1064,6 @@ def build_registration_form_flex():
         alt_text="使用者註冊",
         contents=bubble,
     )
-
 
 def build_my_registration_flex(record=None):
     """一般使用者查看自己的核准資訊；不顯示 LINE ID 與學號。"""
