@@ -14,6 +14,7 @@ from flex_messages import (
     build_personal_rank_flex,
     build_registration_form_flex,
     build_registration_menu_flex,
+    build_subject_selection_flex,
     build_weakness_analysis_flex,
 )
 
@@ -1329,9 +1330,7 @@ def process_message(
         push_message(
             line_bot_api,
             user_id,
-            subject_quick_reply(
-                "📚 測驗與 AI 導師\n\n請選擇想練習的科目："
-            ),
+            build_subject_selection_flex(),
         )
         return
 
