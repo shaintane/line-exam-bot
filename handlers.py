@@ -3,7 +3,7 @@ import logging
 from linebot.models import TextSendMessage
 
 from messaging import answer_quick_reply, subject_quick_reply
-from flex_messages import build_home_flex
+from flex_messages import build_home_flex, build_personal_learning_flex
 
 from access_control import check_user_access
 from challenge_logic import (
@@ -1008,6 +1008,17 @@ def process_message(
             line_bot_api,
             user_id,
             f"你的 LINE User ID 是：\n{user_id}",
+        )
+        return
+
+    # ---------------------------------------------------------
+    # 個人學習 Flex
+    # ---------------------------------------------------------
+    if user_input == "個人學習":
+        push_message(
+            line_bot_api,
+            user_id,
+            build_personal_learning_flex(),
         )
         return
 
