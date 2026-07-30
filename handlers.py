@@ -24,6 +24,7 @@ from challenge_logic import (
 )
 from challenge_service import (
     complete_challenge_attempt,
+    discard_challenge_attempt,
     finalize_expired_challenges,
     get_challenge_leaderboard,
     get_challenge_profile,
@@ -1217,8 +1218,48 @@ def process_message(
         )
         return
 
-    # 挑戰模式作答優先處理，避免誤走一般測驗流程。
+    # 挑戰模式作答優先處理。
+    # 若使用者主動呼叫主選單，視為中斷本次挑戰：
+    # 刪除資料庫中的 in_progress attempt 與其作答紀錄，
+    # 清除記憶體 session，然後讓本次訊息繼續走首頁流程。
     active_session = user_sessions.get(user_id) or {}
+
+    challenge_exit_commands = {
+        "開始",
+        "選單",
+        "主選單",
+        "menu",
+        "Menu",
+        "MENU",
+    }
+
+    if (
+        active_session.get("exam_mode") == "challenge"
+        and user_input in challenge_exit_commands
+    ):
+        attempt_id = active_session.get("challenge_attempt_id")
+
+        try:
+            if attempt_id:
+                discard_challenge_attempt(int(attempt_id))
+        except Exception:
+            LOGGER.exception(
+                "Failed to discard challenge on navigation: "
+                "user_id=%s attempt_id=%s",
+                user_id,
+                attempt_id,
+            )
+            push_message(
+                line_bot_api,
+                user_id,
+                answer_quick_reply(
+                    "⚠️ 無法中斷目前挑戰，請稍後再試。"
+                ),
+            )
+            return
+
+        user_sessions.pop(user_id, None)
+        active_session = {}
 
     if active_session.get("exam_mode") == "challenge":
         handle_challenge_answer(
