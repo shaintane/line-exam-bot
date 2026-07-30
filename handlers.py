@@ -156,8 +156,13 @@ def handle_weakness_analysis_command(
         )
         return
 
-    # 不先傳送「正在分析」，避免同一事件需要第二次 push。
-    # 分析完成後直接以本次 reply token 回傳完整結果。
+    # 先回覆準備中，讓使用者知道系統已收到指令。
+    push_text(
+        line_bot_api,
+        user_id,
+        "🔍 弱點分析準備中，請稍候…",
+    )
+
     analysis = build_weakness_analysis(
         user_id,
         client,
@@ -573,6 +578,12 @@ def handle_start_challenge_command(
             "⚠️ 請先輸入「挑戰模式」查看規則。",
         )
         return
+
+    push_text(
+        line_bot_api,
+        user_id,
+        "⏳ 挑戰題目準備中，請稍候…",
+    )
 
     try:
         questions = build_challenge_questions()
