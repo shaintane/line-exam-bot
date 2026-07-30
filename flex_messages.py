@@ -387,3 +387,172 @@ def build_leaderboard_flex(rows):
         alt_text="挑戰模式歷史排行榜",
         contents=bubble,
     )
+
+def build_personal_rank_flex(summary):
+    """建立個人挑戰排名 Flex Message。"""
+
+    if not summary or not summary.get("has_record"):
+        bubble = BubbleContainer(
+            body=BoxComponent(
+                layout="vertical",
+                spacing="md",
+                contents=[
+                    TextComponent(
+                        text="👤 我的排名",
+                        weight="bold",
+                        size="xl",
+                        wrap=True,
+                    ),
+                    TextComponent(
+                        text="目前還沒有完成的挑戰成績。",
+                        size="sm",
+                        color="#888888",
+                        margin="lg",
+                        wrap=True,
+                    ),
+                    ButtonComponent(
+                        style="primary",
+                        margin="xl",
+                        action=MessageAction(
+                            label="🏆 挑戰模式",
+                            text="挑戰模式",
+                        ),
+                    ),
+                    ButtonComponent(
+                        style="primary",
+                        margin="sm",
+                        action=MessageAction(
+                            label="🥇 排行榜",
+                            text="排行榜",
+                        ),
+                    ),
+                    ButtonComponent(
+                        style="secondary",
+                        margin="lg",
+                        action=MessageAction(
+                            label="🏠 回首頁",
+                            text="主選單",
+                        ),
+                    ),
+                ],
+            )
+        )
+
+        return FlexSendMessage(
+            alt_text="我的挑戰排名",
+            contents=bubble,
+        )
+
+    rank = summary.get("rank")
+    rank_text = f"第 {rank} 名" if rank is not None else "尚未排名"
+
+    nickname = str(summary.get("nickname") or "未設定暱稱")
+    correct_count = int(summary.get("correct_count") or 0)
+    question_count = int(summary.get("question_count") or 30)
+    score_rate = summary.get("score_rate")
+    if score_rate is None:
+        score_rate = round(
+            (correct_count / question_count) * 100,
+            1,
+        ) if question_count else 0
+
+    elapsed_seconds = max(
+        int(summary.get("elapsed_seconds") or 0),
+        0,
+    )
+    minutes, seconds = divmod(elapsed_seconds, 60)
+    elapsed_text = f"{minutes}分{seconds:02d}秒"
+
+    if rank is not None and rank <= 10:
+        status_text = "🔥 已進入 Top 10！"
+    else:
+        status_text = "繼續挑戰，刷新你的最佳紀錄。"
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="👤 我的排名",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=nickname,
+                    size="md",
+                    weight="bold",
+                    margin="md",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                BoxComponent(
+                    layout="vertical",
+                    margin="lg",
+                    spacing="sm",
+                    contents=[
+                        TextComponent(
+                            text=f"歷史最佳：{correct_count} / {question_count}",
+                            size="md",
+                            wrap=True,
+                        ),
+                        TextComponent(
+                            text=f"正確率：{score_rate}%",
+                            size="md",
+                            wrap=True,
+                        ),
+                        TextComponent(
+                            text=f"最佳時間：{elapsed_text}",
+                            size="md",
+                            wrap=True,
+                        ),
+                        TextComponent(
+                            text=f"目前排名：{rank_text}",
+                            size="md",
+                            weight="bold",
+                            wrap=True,
+                        ),
+                    ],
+                ),
+                TextComponent(
+                    text=status_text,
+                    size="sm",
+                    color="#666666",
+                    margin="lg",
+                    wrap=True,
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="xl",
+                    action=MessageAction(
+                        label="🏆 挑戰模式",
+                        text="挑戰模式",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="🥇 排行榜",
+                        text="排行榜",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="我的挑戰排名",
+        contents=bubble,
+    )
