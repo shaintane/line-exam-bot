@@ -4,6 +4,8 @@ from linebot.models import (
     ButtonComponent,
     FlexSendMessage,
     MessageAction,
+    QuickReply,
+    QuickReplyButton,
     SeparatorComponent,
     TextComponent,
 )
@@ -134,4 +136,104 @@ def build_personal_learning_flex():
     return FlexSendMessage(
         alt_text="個人學習選單",
         contents=bubble,
+    )
+
+
+def build_challenge_flex():
+    """建立挑戰模式 Flex Message，並附上開始挑戰 Quick Reply。"""
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="🏆 國考挑戰模式",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="30 題｜六科各 5 題｜23 分鐘",
+                    size="md",
+                    weight="bold",
+                    margin="md",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="排名規則",
+                    weight="bold",
+                    size="md",
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="① 答對題數優先\n② 同分再比完成時間",
+                    size="sm",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="挑戰說明",
+                    weight="bold",
+                    size="md",
+                    margin="lg",
+                ),
+                TextComponent(
+                    text=(
+                        "• 作答後不立即顯示對錯\n"
+                        "• 挑戰開始後計時不暫停\n"
+                        "• 挑戰結果不納入一般學習歷程與弱點分析"
+                    ),
+                    size="sm",
+                    color="#666666",
+                    margin="sm",
+                    wrap=True,
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="xl",
+                    action=MessageAction(
+                        label="👤 我的排名",
+                        text="我的排名",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="🥇 排行榜",
+                        text="排行榜",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="國考挑戰模式",
+        contents=bubble,
+        quick_reply=QuickReply(
+            items=[
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="🔥 開始挑戰",
+                        text="開始挑戰",
+                    )
+                )
+            ]
+        ),
     )
