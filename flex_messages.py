@@ -1141,3 +1141,93 @@ def build_my_registration_flex(record=None):
         alt_text="我的核准資訊",
         contents=bubble,
     )
+
+
+def build_subject_selection_flex():
+    """建立國考六科選擇 Flex Message。"""
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="📚 測驗與 AI 導師",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="請選擇想練習的國考科目",
+                    size="sm",
+                    color="#888888",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="臨床血清免疫學",
+                        text="臨床血清免疫學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="臨床血液與血庫學",
+                        text="臨床血液與血庫學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="臨床生物化學",
+                        text="臨床生物化學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="分子檢驗與鏡檢學",
+                        text="醫學分子檢驗與鏡檢學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="臨床生理與病理學",
+                        text="臨床生理與病理學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="臨床微生物學",
+                        text="臨床微生物學",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="請選擇國考科目",
+        contents=bubble,
+    )
