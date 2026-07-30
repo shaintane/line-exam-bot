@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime
 
 from linebot.models import TextSendMessage
@@ -210,6 +211,57 @@ def format_whitelist(whitelist):
     return "\n".join(rows)
 
 
+
+def parse_registration_input(user_input):
+    """
+    支援兩種註冊輸入格式：
+
+    1. 單行空白格式：
+       學校 姓名 學號 YYYY-MM-DD YYYY-MM-DD
+
+    2. Flex 表單複製後的標籤多行格式：
+       學校：XXX
+       姓名：XXX
+       學號：XXX
+       起始日：YYYY-MM-DD
+       結束日：YYYY-MM-DD
+    """
+    text = str(user_input or "").strip()
+
+    # 先嘗試解析「欄位：內容」格式。
+    labeled = {}
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        match = re.match(
+            r"^(學校|姓名|學號|起始日|結束日)\s*[：:]\s*(.+?)\s*$",
+            line,
+        )
+        if match:
+            labeled[match.group(1)] = match.group(2).strip()
+
+    required_labels = {"學校", "姓名", "學號", "起始日", "結束日"}
+
+    if required_labels.issubset(labeled.keys()):
+        return (
+            labeled["學校"],
+            labeled["姓名"],
+            labeled["學號"],
+            labeled["起始日"],
+            labeled["結束日"],
+        )
+
+    # 再相容原本的單行五欄格式。
+    parts = text.split()
+
+    if len(parts) == 5:
+        return tuple(parts)
+
+    return None
+
 def handle_admin_commands(
     user_input,
     user_id,
@@ -250,20 +302,24 @@ def handle_admin_commands(
     # 接收學生註冊資料
     # ---------------------------------------------------------
     if registration_buffer.get(user_id) == "awaiting_info":
-        parts = user_input.split()
+        parsed = parse_registration_input(user_input)
 
-        if len(parts) != 5:
+        if parsed is None:
             send(
                 line_bot_api,
                 user_id,
                 (
-                    "⚠️ 格式錯誤，請輸入：\n"
-                    "學校 姓名 學號 起始日 結束日"
+                    "⚠️ 格式錯誤，請依表單格式輸入：\n\n"
+                    "學校：XXX\n"
+                    "姓名：XXX\n"
+                    "學號：XXX\n"
+                    "起始日：YYYY-MM-DD\n"
+                    "結束日：YYYY-MM-DD"
                 ),
             )
             return True
 
-        school, name, student_id, start_date, end_date = parts
+        school, name, student_id, start_date, end_date = parsed
 
         if not is_valid_date(start_date) or not is_valid_date(end_date):
             send(
