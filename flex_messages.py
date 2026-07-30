@@ -237,3 +237,153 @@ def build_challenge_flex():
             ]
         ),
     )
+
+def build_leaderboard_flex(rows):
+    """建立挑戰模式 Top 10 排行榜 Flex Message。"""
+
+    if not rows:
+        bubble = BubbleContainer(
+            body=BoxComponent(
+                layout="vertical",
+                spacing="md",
+                contents=[
+                    TextComponent(
+                        text="🥇 歷史排行榜",
+                        weight="bold",
+                        size="xl",
+                        wrap=True,
+                    ),
+                    TextComponent(
+                        text="目前還沒有完成的挑戰紀錄。",
+                        size="sm",
+                        color="#888888",
+                        margin="lg",
+                        wrap=True,
+                    ),
+                    ButtonComponent(
+                        style="primary",
+                        margin="xl",
+                        action=MessageAction(
+                            label="👤 我的排名",
+                            text="我的排名",
+                        ),
+                    ),
+                    ButtonComponent(
+                        style="secondary",
+                        margin="sm",
+                        action=MessageAction(
+                            label="🏠 回首頁",
+                            text="主選單",
+                        ),
+                    ),
+                ],
+            )
+        )
+
+        return FlexSendMessage(
+            alt_text="挑戰模式歷史排行榜",
+            contents=bubble,
+        )
+
+    titles = {
+        1: "神級人物",
+        2: "國考大神",
+        3: "超強挑戰者",
+    }
+
+    medals = {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉",
+    }
+
+    ranking_contents = []
+
+    for row in rows:
+        rank = int(row["rank"])
+        nickname = str(row.get("nickname") or "未設定暱稱")
+        correct_count = int(row.get("correct_count") or 0)
+        question_count = int(row.get("question_count") or 30)
+        elapsed_seconds = max(int(row.get("elapsed_seconds") or 0), 0)
+
+        minutes, seconds = divmod(elapsed_seconds, 60)
+        elapsed_text = f"{minutes}分{seconds:02d}秒"
+
+        prefix = medals.get(rank, f"{rank}.")
+        title = titles.get(rank)
+
+        name_text = f"{prefix} {nickname}"
+        if title:
+            name_text += f"｜{title}"
+
+        ranking_contents.append(
+            BoxComponent(
+                layout="vertical",
+                margin="md",
+                spacing="xs",
+                contents=[
+                    TextComponent(
+                        text=name_text,
+                        weight="bold" if rank <= 3 else "regular",
+                        size="sm",
+                        wrap=True,
+                    ),
+                    TextComponent(
+                        text=f"{correct_count}/{question_count}｜{elapsed_text}",
+                        size="xs",
+                        color="#777777",
+                        wrap=True,
+                    ),
+                ],
+            )
+        )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="🥇 歷史排行榜",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="Top 10｜答對題數優先，同分再比完成時間",
+                    size="xs",
+                    color="#888888",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                *ranking_contents,
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="👤 我的排名",
+                        text="我的排名",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="挑戰模式歷史排行榜",
+        contents=bubble,
+    )
