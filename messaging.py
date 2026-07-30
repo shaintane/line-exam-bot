@@ -94,3 +94,70 @@ class ReplyFirstLineBotApi:
             self._base_api,
             name,
         )
+
+
+# ---------------------------------------------------------------------------
+# Quick Reply helpers (UX v1)
+# ---------------------------------------------------------------------------
+def build_quick_reply_text(text: str, items: list[tuple[str, str]]):
+    """建立帶有 Quick Reply 的 LINE 文字訊息。
+
+    items 格式：[(顯示文字, 實際送出的文字), ...]
+    """
+    from linebot.models import (
+        MessageAction,
+        QuickReply,
+        QuickReplyButton,
+        TextSendMessage,
+    )
+
+    quick_items = [
+        QuickReplyButton(
+            action=MessageAction(
+                label=str(label),
+                text=str(value),
+            )
+        )
+        for label, value in items
+    ]
+
+    return TextSendMessage(
+        text=text,
+        quick_reply=QuickReply(items=quick_items),
+    )
+
+
+def subject_quick_reply(text: str = "請選擇想練習的科目："):
+    """六科選擇 Quick Reply。"""
+    return build_quick_reply_text(
+        text,
+        [
+            ("血清免疫", "臨床血清免疫學"),
+            ("血液血庫", "臨床血液與血庫學"),
+            ("生物化學", "臨床生物化學"),
+            ("分子鏡檢", "醫學分子檢驗與鏡檢學"),
+            ("生理病理", "臨床生理與病理學"),
+            ("微生物", "臨床微生物學"),
+        ],
+    )
+
+
+def question_count_quick_reply(text: str):
+    """5 / 10 / 20 / 30 題 Quick Reply。"""
+    return build_quick_reply_text(
+        text,
+        [
+            ("5 題", "5"),
+            ("10 題", "10"),
+            ("20 題", "20"),
+            ("30 題", "30"),
+        ],
+    )
+
+
+def answer_quick_reply(text: str):
+    """A / B / C / D 作答 Quick Reply。"""
+    return build_quick_reply_text(
+        text,
+        [("A", "A"), ("B", "B"), ("C", "C"), ("D", "D")],
+    )
