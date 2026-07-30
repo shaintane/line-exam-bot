@@ -1055,19 +1055,18 @@ def process_message(
         push_message(
             line_bot_api,
             user_id,
-            build_registration_form_flex(),
-        )
-
-        push_text(
-            line_bot_api,
-            user_id,
-            (
-                "學校：\n"
-                "姓名：\n"
-                "學號：\n"
-                "起始日：\n"
-                "結束日："
-            ),
+            [
+                build_registration_form_flex(),
+                TextSendMessage(
+                    text=(
+                        "學校：\n"
+                        "姓名：\n"
+                        "學號：\n"
+                        "起始日：\n"
+                        "結束日："
+                    )
+                ),
+            ],
         )
         return
 
