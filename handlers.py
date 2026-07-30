@@ -681,7 +681,6 @@ def finish_challenge_session(
             f"答對題數：{correct} / {total}\n"
             f"正確率：{rate}%\n"
             f"完成時間：{elapsed_text}\n\n"
-            "排行榜與個人最佳紀錄將在下一階段接上。"
         )
     else:
         result_text = (
@@ -689,7 +688,6 @@ def finish_challenge_session(
             f"答對題數：{correct} / {total}\n"
             f"正確率：{rate}%\n"
             f"完成時間：{elapsed_text}\n\n"
-            "排行榜與個人最佳紀錄將在下一階段接上。"
         )
 
     try:
