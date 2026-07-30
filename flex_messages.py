@@ -745,3 +745,198 @@ def build_challenge_result_flex(
         alt_text="挑戰結算",
         contents=bubble,
     )
+
+def _split_flex_text(text, max_chars=1200):
+    """將較長文字切成多個 Flex TextComponent 可安全顯示的區塊。"""
+    cleaned = str(text or "").strip()
+
+    if not cleaned:
+        return ["目前沒有可顯示的資料。"]
+
+    chunks = []
+    current = ""
+
+    for line in cleaned.splitlines():
+        candidate = line if not current else f"{current}\n{line}"
+
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+
+        if current:
+            chunks.append(current)
+            current = ""
+
+        while len(line) > max_chars:
+            chunks.append(line[:max_chars])
+            line = line[max_chars:]
+
+        current = line
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+def build_learning_history_flex(message):
+    """建立學習歷程結果 Flex。"""
+
+    body_contents = [
+        TextComponent(
+            text="📊 學習歷程",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text="近期測驗與學習表現",
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(
+            margin="lg",
+        ),
+    ]
+
+    for chunk in _split_flex_text(message):
+        body_contents.append(
+            TextComponent(
+                text=chunk,
+                size="sm",
+                margin="md",
+                wrap=True,
+            )
+        )
+
+    body_contents.extend(
+        [
+            SeparatorComponent(
+                margin="xl",
+            ),
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="🔍 弱點分析",
+                    text="弱點分析",
+                ),
+            ),
+            ButtonComponent(
+                style="primary",
+                margin="sm",
+                action=MessageAction(
+                    label="📚 一般測驗",
+                    text="一般測驗",
+                ),
+            ),
+            ButtonComponent(
+                style="secondary",
+                margin="lg",
+                action=MessageAction(
+                    label="🏠 回首頁",
+                    text="主選單",
+                ),
+            ),
+        ]
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=body_contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="學習歷程",
+        contents=bubble,
+    )
+
+
+def build_weakness_analysis_flex(message, has_data=True):
+    """建立弱點分析結果 Flex。"""
+
+    body_contents = [
+        TextComponent(
+            text="🔍 弱點分析",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text="依近期作答紀錄整理優先加強方向",
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(
+            margin="lg",
+        ),
+    ]
+
+    for chunk in _split_flex_text(message):
+        body_contents.append(
+            TextComponent(
+                text=chunk,
+                size="sm",
+                margin="md",
+                wrap=True,
+            )
+        )
+
+    body_contents.append(
+        SeparatorComponent(
+            margin="xl",
+        )
+    )
+
+    if has_data:
+        body_contents.append(
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="🎯 開始弱點練習",
+                    text="開始弱點練習",
+                ),
+            )
+        )
+
+    body_contents.extend(
+        [
+            ButtonComponent(
+                style="primary",
+                margin="sm" if has_data else "lg",
+                action=MessageAction(
+                    label="📊 學習歷程",
+                    text="學習歷程",
+                ),
+            ),
+            ButtonComponent(
+                style="secondary",
+                margin="lg",
+                action=MessageAction(
+                    label="🏠 回首頁",
+                    text="主選單",
+                ),
+            ),
+        ]
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=body_contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="弱點分析",
+        contents=bubble,
+    )
