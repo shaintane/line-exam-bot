@@ -35,8 +35,8 @@ def build_home_flex():
                     style="primary",
                     margin="lg",
                     action=MessageAction(
-                        label="👤 註冊／會員",
-                        text="註冊／會員",
+                        label="👤 註冊",
+                        text="註冊選單",
                     ),
                 ),
                 ButtonComponent(
@@ -938,5 +938,217 @@ def build_weakness_analysis_flex(message, has_data=True):
 
     return FlexSendMessage(
         alt_text="弱點分析",
+        contents=bubble,
+    )
+
+def build_registration_menu_flex():
+    """建立註冊第二層選單 Flex。"""
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="👤 註冊",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="申請使用資格，或查看核准資訊。",
+                    size="sm",
+                    color="#888888",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="📝 註冊",
+                        text="開始註冊",
+                    ),
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="✅ 核准名單",
+                        text="核准名單",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="註冊選單",
+        contents=bubble,
+    )
+
+
+def build_registration_form_flex():
+    """建立註冊資料填寫說明 Flex。"""
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="📝 使用者註冊",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="請依下列格式直接輸入一行資料。",
+                    size="sm",
+                    color="#888888",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="填寫格式",
+                    weight="bold",
+                    size="md",
+                    margin="lg",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="學校 姓名 學號 起始日 結束日",
+                    size="md",
+                    margin="sm",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="日期格式：YYYY-MM-DD",
+                    size="sm",
+                    color="#666666",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="範例",
+                    weight="bold",
+                    size="md",
+                    margin="lg",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="國立醫學大學 王小明 A123456 2026-08-01 2026-12-31",
+                    size="sm",
+                    margin="sm",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="輸入完成後直接送出即可。",
+                    size="sm",
+                    color="#666666",
+                    margin="lg",
+                    wrap=True,
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="使用者註冊",
+        contents=bubble,
+    )
+
+
+def build_my_registration_flex(record=None):
+    """一般使用者查看自己的核准資訊；不顯示 LINE ID 與學號。"""
+
+    if not record:
+        contents = [
+            TextComponent(
+                text="✅ 核准資訊",
+                weight="bold",
+                size="xl",
+                wrap=True,
+            ),
+            SeparatorComponent(
+                margin="lg",
+            ),
+            TextComponent(
+                text="目前查無已核准的使用資格。",
+                size="md",
+                margin="lg",
+                wrap=True,
+            ),
+        ]
+    else:
+        start_date = str(record.get("start_date") or "未設定")
+        end_date = str(record.get("end_date") or "未設定")
+        is_active = bool(record.get("is_active", True))
+        status_text = "使用中" if is_active else "已停用"
+
+        contents = [
+            TextComponent(
+                text="✅ 我的核准資訊",
+                weight="bold",
+                size="xl",
+                wrap=True,
+            ),
+            TextComponent(
+                text=f"狀態：{status_text}",
+                size="sm",
+                color="#666666",
+                margin="sm",
+                wrap=True,
+            ),
+            SeparatorComponent(
+                margin="lg",
+            ),
+            TextComponent(
+                text=f"姓名：{record.get('name') or '未設定'}",
+                size="md",
+                margin="lg",
+                wrap=True,
+            ),
+            TextComponent(
+                text=f"學校：{record.get('school') or '未設定'}",
+                size="md",
+                margin="sm",
+                wrap=True,
+            ),
+            TextComponent(
+                text=f"使用期限：{start_date} ～ {end_date}",
+                size="md",
+                margin="sm",
+                wrap=True,
+            ),
+        ]
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="我的核准資訊",
         contents=bubble,
     )
