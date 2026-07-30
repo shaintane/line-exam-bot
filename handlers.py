@@ -1088,17 +1088,27 @@ def process_message(
         return
 
     # ---------------------------------------------------------
-    # 進入一般測驗：以 Quick Reply 選擇六科
+    # 首頁 Flex
     # ---------------------------------------------------------
     if user_input in {
         "開始",
-        "一般測驗",
         "選單",
         "主選單",
         "menu",
         "Menu",
         "MENU",
     }:
+        push_message(
+            line_bot_api,
+            user_id,
+            build_home_flex(),
+        )
+        return
+
+    # ---------------------------------------------------------
+    # 一般測驗：以 Quick Reply 選擇六科
+    # ---------------------------------------------------------
+    if user_input == "一般測驗":
         push_message(
             line_bot_api,
             user_id,
