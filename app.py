@@ -107,6 +107,14 @@ def handle_follow(event):
     2. 下方只提供「👤 註冊」Quick Reply
     """
 
+    # FollowEvent 可能也會在「解除封鎖後重新加入」時觸發。
+    # 清除舊的記憶體暫存狀態，避免舊測驗／暱稱 pending 攔截新操作。
+    # 只清除記憶體，不刪 whitelist、資料庫成績或正式註冊資料。
+    user_id = getattr(event.source, "user_id", None)
+    if user_id:
+        user_sessions.pop(user_id, None)
+        registration_buffer.pop(user_id, None)
+
     welcome_text = (
         "👋 歡迎加入「國軍桃園醫檢師國考智慧學習系統」！\n\n"
         "這裡不只是題庫，更是你的 AI 國考學習夥伴 🤖📚\n"
