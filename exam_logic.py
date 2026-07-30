@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 from linebot.models import TextSendMessage
-from messaging import answer_quick_reply
+from messaging import answer_quick_reply, question_count_quick_reply
 
 from access_control import check_user_access
 from history_service import (
@@ -1078,12 +1078,10 @@ def handle_exam_logic(
             selected_count = 0
 
         if selected_count not in ALLOWED_QUESTION_COUNTS:
-            send_text(
-                line_bot_api,
+            line_bot_api.push_message(
                 user_id,
-                (
-                    "請選擇本次測驗題數：\n"
-                    "5 / 10 / 20 / 30"
+                question_count_quick_reply(
+                    "請選擇本次測驗題數："
                 ),
             )
             return
@@ -1137,13 +1135,11 @@ def handle_exam_logic(
 
             user_sessions[user_id] = pending_session
 
-            send_text(
-                line_bot_api,
+            line_bot_api.push_message(
                 user_id,
-                (
+                question_count_quick_reply(
                     f"✅ 已選擇『{subject}』。\n\n"
-                    "請選擇本次測驗題數：\n"
-                    "5 / 10 / 20 / 30"
+                    "請選擇本次測驗題數："
                 ),
             )
             return
