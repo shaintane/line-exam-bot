@@ -3,6 +3,7 @@ import logging
 from linebot.models import TextSendMessage
 
 from messaging import answer_quick_reply, subject_quick_reply
+from flex_messages import build_home_flex
 
 from access_control import check_user_access
 from challenge_logic import (
