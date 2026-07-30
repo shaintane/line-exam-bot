@@ -556,3 +556,192 @@ def build_personal_rank_flex(summary):
         alt_text="我的挑戰排名",
         contents=bubble,
     )
+
+def build_challenge_result_flex(
+    *,
+    status,
+    answered_count,
+    total,
+    correct,
+    rate,
+    elapsed_seconds,
+    personal=None,
+    needs_nickname=False,
+):
+    """建立挑戰結算 Flex Message。"""
+
+    total = int(total or 30)
+    answered_count = int(answered_count or 0)
+    correct = int(correct or 0)
+    elapsed_seconds = max(int(elapsed_seconds or 0), 0)
+
+    minutes, seconds = divmod(elapsed_seconds, 60)
+    elapsed_text = f"{minutes}分{seconds:02d}秒"
+
+    if status == "timeout":
+        title = "⏰ 挑戰時間到"
+        subtitle = f"已完成 {answered_count} / {total} 題"
+    else:
+        title = "🏆 挑戰完成"
+        subtitle = "本次挑戰成績"
+
+    contents = [
+        TextComponent(
+            text=title,
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text=subtitle,
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(
+            margin="lg",
+        ),
+        TextComponent(
+            text="本次挑戰",
+            weight="bold",
+            size="md",
+            margin="lg",
+        ),
+        BoxComponent(
+            layout="vertical",
+            margin="sm",
+            spacing="sm",
+            contents=[
+                TextComponent(
+                    text=f"答對題數：{correct} / {total}",
+                    size="md",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=f"正確率：{rate}%",
+                    size="md",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=f"完成時間：{elapsed_text}",
+                    size="md",
+                    wrap=True,
+                ),
+            ],
+        ),
+    ]
+
+    if personal and personal.get("has_record"):
+        rank = personal.get("rank")
+        rank_text = f"第 {rank} 名" if rank is not None else "尚未排名"
+
+        best_correct = int(personal.get("correct_count") or 0)
+        best_total = int(personal.get("question_count") or total)
+        best_elapsed = max(int(personal.get("elapsed_seconds") or 0), 0)
+        best_minutes, best_seconds = divmod(best_elapsed, 60)
+        best_elapsed_text = f"{best_minutes}分{best_seconds:02d}秒"
+
+        contents.extend(
+            [
+                SeparatorComponent(
+                    margin="lg",
+                ),
+                TextComponent(
+                    text="個人紀錄",
+                    weight="bold",
+                    size="md",
+                    margin="lg",
+                ),
+                BoxComponent(
+                    layout="vertical",
+                    margin="sm",
+                    spacing="sm",
+                    contents=[
+                        TextComponent(
+                            text=f"歷史最佳：{best_correct} / {best_total}",
+                            size="md",
+                            wrap=True,
+                        ),
+                        TextComponent(
+                            text=f"最佳時間：{best_elapsed_text}",
+                            size="md",
+                            wrap=True,
+                        ),
+                        TextComponent(
+                            text=f"目前排名：{rank_text}",
+                            size="md",
+                            weight="bold",
+                            wrap=True,
+                        ),
+                    ],
+                ),
+            ]
+        )
+
+        if rank is not None and rank <= 10:
+            contents.append(
+                TextComponent(
+                    text="🎉 成功進入 Top 10！",
+                    size="sm",
+                    weight="bold",
+                    margin="lg",
+                    wrap=True,
+                )
+            )
+
+    if needs_nickname:
+        contents.append(
+            TextComponent(
+                text="請直接輸入排行榜暱稱，設定後就會顯示在排行榜。",
+                size="sm",
+                color="#666666",
+                margin="lg",
+                wrap=True,
+            )
+        )
+
+    contents.extend(
+        [
+            SeparatorComponent(
+                margin="xl",
+            ),
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="🔥 再次挑戰",
+                    text="挑戰模式",
+                ),
+            ),
+            ButtonComponent(
+                style="primary",
+                margin="sm",
+                action=MessageAction(
+                    label="🥇 排行榜",
+                    text="排行榜",
+                ),
+            ),
+            ButtonComponent(
+                style="secondary",
+                margin="lg",
+                action=MessageAction(
+                    label="🏠 回首頁",
+                    text="主選單",
+                ),
+            ),
+        ]
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="挑戰結算",
+        contents=bubble,
+    )
