@@ -682,6 +682,53 @@ def get_personal_challenge_summary(
     }
 
 
+
+def discard_challenge_attempt(attempt_id: int) -> bool:
+    """
+    主動中斷挑戰時刪除尚未完成的 challenge attempt。
+
+    只允許刪除 status == "in_progress" 的紀錄。
+    先刪除該 attempt 的 ChallengeAnswer，再刪除 ChallengeAttempt，
+    避免留下未完成挑戰與孤兒作答紀錄。
+    """
+    if not attempt_id:
+        return False
+
+    attempt = db.session.get(
+        ChallengeAttempt,
+        int(attempt_id),
+    )
+
+    if attempt is None:
+        return False
+
+    if str(attempt.status or "").strip() != "in_progress":
+        return False
+
+    try:
+        (
+            ChallengeAnswer.query
+            .filter_by(attempt_id=attempt.id)
+            .delete(synchronize_session=False)
+        )
+
+        db.session.delete(attempt)
+        db.session.commit()
+
+        LOGGER.info(
+            "Challenge attempt discarded: attempt_id=%s",
+            attempt_id,
+        )
+        return True
+
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to discard challenge attempt: attempt_id=%s",
+            attempt_id,
+        )
+        raise
+
 def get_challenge_attempt(
     attempt_id: int,
 ) -> ChallengeAttempt | None:
