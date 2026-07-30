@@ -3,7 +3,11 @@ import logging
 from linebot.models import TextSendMessage
 
 from messaging import answer_quick_reply, subject_quick_reply
-from flex_messages import build_home_flex, build_personal_learning_flex
+from flex_messages import (
+    build_challenge_flex,
+    build_home_flex,
+    build_personal_learning_flex,
+)
 
 from access_control import check_user_access
 from challenge_logic import (
@@ -1071,10 +1075,27 @@ def process_message(
         "挑戰模式",
         "挑戰賽",
     }:
-        handle_challenge_menu_command(
-            user_id,
+        access = check_and_sync_access(user_id)
+
+        if not access.allowed:
+            user_sessions.pop(user_id, None)
+            push_text(
+                line_bot_api,
+                user_id,
+                access.message,
+            )
+            return
+
+        user_sessions[user_id] = {
+            "completed": True,
+            "challenge_pending": True,
+            "exam_mode": "challenge_pending",
+        }
+
+        push_message(
             line_bot_api,
-            user_sessions,
+            user_id,
+            build_challenge_flex(),
         )
         return
 
