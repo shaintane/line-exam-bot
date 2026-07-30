@@ -340,3 +340,86 @@ def save_explanation_record(
             answer_record_id,
         )
         raise
+
+
+def sync_access_and_apply_retention(
+    line_user_id: str,
+    access,
+) -> None:
+    """
+    將 access_control 的權限狀態同步至資料庫。
+
+    設計原則：
+    1. 不因單純檢查權限而建立新的 User 紀錄。
+    2. 若資料庫已有 User，則同步其 status。
+    3. 當 access.status == "expired" 時，刪除該使用者的所有測驗歷程。
+       ExamAttempt 與 AnswerRecord / ExplanationRecord 已設定 cascade，
+       因此刪除 ExamAttempt 即可一併清除其作答與解析紀錄。
+    4. whitelist / pending registration 等正式權限來源不在此函式修改。
+    """
+    cleaned_line_user_id = str(line_user_id or "").strip()
+    if not cleaned_line_user_id:
+        return
+
+    access_status = str(
+        getattr(access, "status", "") or ""
+    ).strip()
+
+    user = User.query.filter_by(
+        line_user_id=cleaned_line_user_id
+    ).first()
+
+    if user is None:
+        LOGGER.info(
+            "Access sync skipped because user does not yet exist in database: "
+            "line_user_id=%s status=%s",
+            cleaned_line_user_id,
+            access_status or "unknown",
+        )
+        return
+
+    changed = False
+
+    if access_status and user.status != access_status:
+        user.status = access_status
+        changed = True
+
+    try:
+        if access_status == "expired":
+            deleted_attempts = (
+                ExamAttempt.query
+                .filter_by(user_id=user.id)
+                .delete(synchronize_session=False)
+            )
+
+            db.session.commit()
+
+            LOGGER.info(
+                "Expired user retention applied: "
+                "line_user_id=%s database_user_id=%s deleted_attempts=%s",
+                cleaned_line_user_id,
+                user.id,
+                deleted_attempts,
+            )
+            return
+
+        if changed:
+            db.session.commit()
+
+            LOGGER.info(
+                "User access status synchronized: "
+                "line_user_id=%s database_user_id=%s status=%s",
+                cleaned_line_user_id,
+                user.id,
+                access_status,
+            )
+
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to synchronize access and retention: "
+            "line_user_id=%s status=%s",
+            cleaned_line_user_id,
+            access_status or "unknown",
+        )
+        raise
