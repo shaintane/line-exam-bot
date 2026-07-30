@@ -1031,7 +1031,13 @@ def build_registration_form_flex():
                     wrap=True,
                 ),
                 TextComponent(
-                    text="學校 姓名 學號 起始日 結束日",
+                    text=(
+                        "學校：\n"
+                        "姓名：\n"
+                        "學號：\n"
+                        "起始日：\n"
+                        "結束日："
+                    ),
                     size="md",
                     margin="sm",
                     wrap=True,
@@ -1054,7 +1060,13 @@ def build_registration_form_flex():
                     wrap=True,
                 ),
                 TextComponent(
-                    text="國立醫學大學 王小明 A123456 2026-08-01 2026-12-31",
+                    text=(
+                        "學校：國立醫學大學\n"
+                        "姓名：王小明\n"
+                        "學號：A123456\n"
+                        "起始日：2026-08-01\n"
+                        "結束日：2026-12-31"
+                    ),
                     size="sm",
                     margin="sm",
                     wrap=True,
