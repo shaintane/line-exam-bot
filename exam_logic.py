@@ -9,6 +9,8 @@ from typing import Any
 import requests
 from linebot.models import TextSendMessage
 
+from messaging import answer_quick_reply, question_count_quick_reply
+
 from access_control import check_user_access
 from history_service import (
     complete_exam_attempt,
@@ -53,6 +55,10 @@ def send_text(line_bot_api, user_id: str, text: str) -> None:
         user_id,
         TextSendMessage(text=text),
     )
+
+def send_message(line_bot_api, user_id: str, message) -> None:
+    """傳送已建立完成的 LINE message object。"""
+    line_bot_api.push_message(user_id, message)
 
 
 def normalize_answer(answer: str) -> str:
@@ -735,10 +741,10 @@ def start_exam_with_questions(
         )
     )
 
-    send_text(
+    send_message(
         line_bot_api,
         user_id,
-        f"{heading}\n\n{first_message}",
+        answer_quick_reply(f"{heading}\n\n{first_message}"),
     )
 
 
@@ -833,10 +839,10 @@ def handle_answer(
     normalized_input = normalize_answer(user_input)
 
     if normalized_input not in {"A", "B", "C", "D"}:
-        send_text(
+        send_message(
             line_bot_api,
             user_id,
-            "⚠️ 請填入 A / B / C / D 作為答案。",
+            answer_quick_reply("⚠️ 請選擇 A / B / C / D 作為答案。"),
         )
         return
 
@@ -882,7 +888,11 @@ def handle_answer(
             session["current"],
             str(session.get("repo", "")),
         )
-        send_text(line_bot_api, user_id, next_message)
+        send_message(
+            line_bot_api,
+            user_id,
+            answer_quick_reply(next_message),
+        )
         return
 
     answers = session.get("answers", [])
@@ -1011,12 +1021,11 @@ def handle_exam_logic(
             selected_count = 0
 
         if selected_count not in ALLOWED_QUESTION_COUNTS:
-            send_text(
+            send_message(
                 line_bot_api,
                 user_id,
-                (
-                    "請選擇本次測驗題數：\n"
-                    "5 / 10 / 20 / 30"
+                question_count_quick_reply(
+                    "請選擇本次測驗題數："
                 ),
             )
             return
@@ -1070,13 +1079,11 @@ def handle_exam_logic(
 
             user_sessions[user_id] = pending_session
 
-            send_text(
+            send_message(
                 line_bot_api,
                 user_id,
-                (
-                    f"✅ 已選擇『{subject}』。\n\n"
-                    "請選擇本次測驗題數：\n"
-                    "5 / 10 / 20 / 30"
+                question_count_quick_reply(
+                    f"✅ 已選擇『{subject}』。\n\n請選擇本次測驗題數："
                 ),
             )
             return
