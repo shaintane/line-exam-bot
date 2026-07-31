@@ -1,3 +1,13 @@
+# =============================================================
+# V2 TEST VERSION
+# Based on current production exam_logic.py uploaded by user.
+# Added only:
+# 1) QUESTION_BANK_BRANCH switch (default: main)
+# 2) image URLs follow selected branch
+# 3) single / multiple accepted / all-credit scoring support
+# Old single-answer question banks remain compatible.
+# =============================================================
+
 import difflib
 import json
 import logging
@@ -30,6 +40,7 @@ from history_service import (
 
 LOGGER = logging.getLogger(__name__)
 GITHUB_OWNER = "shaintane"
+QUESTION_BANK_BRANCH = os.getenv("QUESTION_BANK_BRANCH", "main").strip() or "main"
 NUM_QUESTIONS = 5
 ALLOWED_QUESTION_COUNTS = {5, 10, 20, 30}
 EXPLANATION_LIMIT = 3
@@ -106,6 +117,42 @@ def normalize_answer(answer: str) -> str:
         .replace("Ｃ", "C")
         .replace("Ｄ", "D")
     )
+
+
+def get_accepted_answers(question: dict[str, Any]) -> list[str]:
+    """取得單一、多答案或一律給分題目的可接受答案。"""
+    scoring_rule = str(question.get("評分規則", "")).strip().lower()
+    if scoring_rule in {"all_credit", "all-credit", "allcredit", "一律給分"}:
+        return ["A", "B", "C", "D"]
+
+    raw_answer = question.get("正解", "")
+    if isinstance(raw_answer, (list, tuple, set)):
+        raw_items = list(raw_answer)
+    else:
+        raw_text = str(raw_answer).strip()
+        if not raw_text:
+            return []
+        raw_items = re.split(r"[,/、\s]+", raw_text)
+
+    accepted: list[str] = []
+    for item in raw_items:
+        normalized = normalize_answer(str(item))
+        if normalized in {"A", "B", "C", "D"} and normalized not in accepted:
+            accepted.append(normalized)
+    return accepted
+
+
+def format_correct_answer(question: dict[str, Any]) -> str:
+    """供 LINE 顯示及資料庫紀錄使用。"""
+    scoring_rule = str(question.get("評分規則", "")).strip().lower()
+    if scoring_rule in {"all_credit", "all-credit", "allcredit", "一律給分"}:
+        return "一律給分"
+    return "/".join(get_accepted_answers(question))
+
+
+def is_correct_answer(question: dict[str, Any], student_answer: str) -> bool:
+    """判斷學生答案是否屬於本題可接受答案。"""
+    return normalize_answer(student_answer) in set(get_accepted_answers(question))
 
 
 def match_subject_name(
@@ -213,10 +260,18 @@ def load_question_bank(repo: str) -> list[dict[str, Any]]:
     3. 題庫格式驗證
     4. optional GITHUB_TOKEN 支援
     """
-    api_url = f"https://api.github.com/repos/{GITHUB_OWNER}/{repo}/contents"
+    api_url = (
+        f"https://api.github.com/repos/{GITHUB_OWNER}/{repo}/contents"
+        f"?ref={QUESTION_BANK_BRANCH}"
+    )
 
     try:
-        LOGGER.info("Loading question bank: repo=%s url=%s", repo, api_url)
+        LOGGER.info(
+            "Loading question bank: repo=%s branch=%s url=%s",
+            repo,
+            QUESTION_BANK_BRANCH,
+            api_url,
+        )
 
         response = requests.get(
             api_url,
@@ -347,7 +402,7 @@ def build_image_url(repo: str, image_path: Any) -> str:
 
     return (
         f"https://raw.githubusercontent.com/"
-        f"{GITHUB_OWNER}/{repo}/main/{cleaned_path}"
+        f"{GITHUB_OWNER}/{repo}/{QUESTION_BANK_BRANCH}/{cleaned_path}"
     )
 
 
@@ -450,12 +505,13 @@ def generate_explanation(
     以 Structured Outputs 取得固定欄位，再由 Python 組成 LINE 純文字。
     模型自由文字不會直接傳送給使用者。
     """
-    correct_answer = normalize_answer(str(question.get("正解", "")))
+    accepted_answers = get_accepted_answers(question)
+    correct_answer = format_correct_answer(question)
     question_text = str(question.get("題目", "")).strip()
     options = question.get("選項", [])
     model_name = os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
 
-    if not question_text or not isinstance(options, list) or not options or not correct_answer:
+    if not question_text or not isinstance(options, list) or not options or not accepted_answers:
         LOGGER.error("Explanation input incomplete: question=%s", question)
         return None
 
@@ -504,7 +560,7 @@ def generate_explanation(
         f"題目：\n{question_text}\n\n"
         f"選項：\n{option_text}\n\n"
         f"學生作答：{student_answer_normalized}\n"
-        f"題庫正確答案：{correct_answer}\n\n"
+        f"題庫可接受答案：{correct_answer}\n\n"
         "請完整解析本題。核心解析需說明正解理由；"
         "選項辨析先處理學生所選答案，再視需要補充其他選項；"
         "結論需明確；國考重點只寫一句。"
@@ -546,7 +602,11 @@ def generate_explanation(
             LOGGER.error("Structured explanation missing required usable content: %s", data)
             return None
 
-        result = "正確" if student_answer_normalized == correct_answer else "錯誤"
+        result = (
+            "正確"
+            if student_answer_normalized in set(accepted_answers)
+            else "錯誤"
+        )
 
         explanation = (
             f"作答結果：{result}\n"
@@ -901,9 +961,9 @@ def handle_answer(
     session["last_activity_at"] = time.time()
 
     current_question = session["questions"][current_index]
-    correct_answer = normalize_answer(str(current_question.get("正解", "")))
+    correct_answer = format_correct_answer(current_question)
 
-    is_correct = normalized_input == correct_answer
+    is_correct = is_correct_answer(current_question, normalized_input)
 
     session.setdefault("answers", []).append(
         {
