@@ -41,6 +41,18 @@ from history_service import (
 LOGGER = logging.getLogger(__name__)
 GITHUB_OWNER = "shaintane"
 QUESTION_BANK_BRANCH = os.getenv("QUESTION_BANK_BRANCH", "main").strip() or "main"
+
+# 分科題庫分支設定：
+# - 醫學分子檢驗與鏡檢學目前使用 v2-test
+# - 其他科目維持 main
+QUESTION_BANK_BRANCHES = {
+    "exammolecu": "v2-test",
+}
+
+
+def get_question_bank_branch(repo: str) -> str:
+    """回傳指定分科 repo 使用的 GitHub branch；未設定者使用 main。"""
+    return QUESTION_BANK_BRANCHES.get(repo, "main")
 NUM_QUESTIONS = 5
 ALLOWED_QUESTION_COUNTS = {5, 10, 20, 30}
 EXPLANATION_LIMIT = 3
@@ -260,16 +272,17 @@ def load_question_bank(repo: str) -> list[dict[str, Any]]:
     3. 題庫格式驗證
     4. optional GITHUB_TOKEN 支援
     """
+    branch = get_question_bank_branch(repo)
     api_url = (
         f"https://api.github.com/repos/{GITHUB_OWNER}/{repo}/contents"
-        f"?ref={QUESTION_BANK_BRANCH}"
+        f"?ref={branch}"
     )
 
     try:
         LOGGER.info(
             "Loading question bank: repo=%s branch=%s url=%s",
             repo,
-            QUESTION_BANK_BRANCH,
+            branch,
             api_url,
         )
 
@@ -400,9 +413,10 @@ def build_image_url(repo: str, image_path: Any) -> str:
     if not cleaned_path:
         return ""
 
+    branch = get_question_bank_branch(repo)
     return (
         f"https://raw.githubusercontent.com/"
-        f"{GITHUB_OWNER}/{repo}/{QUESTION_BANK_BRANCH}/{cleaned_path}"
+        f"{GITHUB_OWNER}/{repo}/{branch}/{cleaned_path}"
     )
 
 
