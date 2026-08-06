@@ -47,6 +47,11 @@ QUESTION_BANK_BRANCH = os.getenv("QUESTION_BANK_BRANCH", "main").strip() or "mai
 # - 其他科目維持 main
 QUESTION_BANK_BRANCHES = {
     "exammolecu": "v2-test",
+    "examimmun": "v2-test",
+    "exmablood": "v2-test",
+    "exambiochemicy": "v2-test",
+    "exampatho": "v2-test",
+    "exammicrbiog": "v2-test",
 }
 
 
