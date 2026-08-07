@@ -54,6 +54,13 @@ class User(db.Model):
         lazy=True,
     )
 
+    issue_reports = db.relationship(
+        "IssueReport",
+        back_populates="user",
+        lazy=True,
+        foreign_keys="IssueReport.user_id",
+    )
+
     challenge_profile = db.relationship(
         "ChallengeProfile",
         back_populates="user",
@@ -189,6 +196,13 @@ class AnswerRecord(db.Model):
         lazy=True,
     )
 
+    issue_reports = db.relationship(
+        "IssueReport",
+        back_populates="answer_record",
+        lazy=True,
+        foreign_keys="IssueReport.answer_record_id",
+    )
+
     __table_args__ = (
         db.UniqueConstraint(
             "attempt_id",
@@ -228,6 +242,156 @@ class ExplanationRecord(db.Model):
         "AnswerRecord",
         back_populates="explanation_records",
     )
+
+    issue_reports = db.relationship(
+        "IssueReport",
+        back_populates="explanation_record",
+        lazy=True,
+        foreign_keys="IssueReport.explanation_record_id",
+    )
+
+
+class IssueReport(db.Model):
+    """題目／答案與 AI 解析問題回報。"""
+
+    __tablename__ = "issue_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # 保留 user 關聯；即使未來刪除 User，也保留回報快照。
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    line_user_id = db.Column(
+        db.String(64),
+        nullable=False,
+        index=True,
+    )
+
+    # 與原始作答／解析紀錄建立可追溯關聯。
+    # 使用 SET NULL，避免學習歷程因到期清除時把 QC 回報一起刪除。
+    answer_record_id = db.Column(
+        db.Integer,
+        db.ForeignKey("answer_records.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    explanation_record_id = db.Column(
+        db.Integer,
+        db.ForeignKey("explanation_records.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # question / ai_explanation
+    report_type = db.Column(
+        db.String(30),
+        nullable=False,
+        index=True,
+    )
+    issue_category = db.Column(
+        db.String(50),
+        nullable=False,
+        index=True,
+    )
+
+    # 回報當下的題目與解析快照。
+    subject = db.Column(
+        db.String(100),
+        nullable=True,
+        index=True,
+    )
+    repo = db.Column(
+        db.String(100),
+        nullable=True,
+    )
+    question_number = db.Column(
+        db.Integer,
+        nullable=True,
+    )
+    question_id = db.Column(
+        db.String(150),
+        nullable=True,
+        index=True,
+    )
+    question_text = db.Column(
+        db.Text,
+        nullable=False,
+    )
+    options_json = db.Column(
+        db.JSON,
+        nullable=True,
+    )
+    student_answer = db.Column(
+        db.String(20),
+        nullable=True,
+    )
+    correct_answer = db.Column(
+        db.String(20),
+        nullable=True,
+    )
+    ai_explanation = db.Column(
+        db.Text,
+        nullable=True,
+    )
+
+    user_comment = db.Column(
+        db.Text,
+        nullable=True,
+    )
+
+    # pending / reviewing / resolved / rejected
+    status = db.Column(
+        db.String(30),
+        nullable=False,
+        default="pending",
+        index=True,
+    )
+    admin_note = db.Column(
+        db.Text,
+        nullable=True,
+    )
+    reviewed_by = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        index=True,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+    reviewed_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=True,
+    )
+
+    user = db.relationship(
+        "User",
+        back_populates="issue_reports",
+        foreign_keys=[user_id],
+    )
+    answer_record = db.relationship(
+        "AnswerRecord",
+        back_populates="issue_reports",
+        foreign_keys=[answer_record_id],
+    )
+    explanation_record = db.relationship(
+        "ExplanationRecord",
+        back_populates="issue_reports",
+        foreign_keys=[explanation_record_id],
+    )
+
 
 class ChallengeProfile(db.Model):
     """挑戰模式專用個人資料；與一般學習歷程分開。"""
@@ -403,4 +567,3 @@ class ChallengeAnswer(db.Model):
             name="uq_challenge_answer_attempt_question_number",
         ),
     )
-
