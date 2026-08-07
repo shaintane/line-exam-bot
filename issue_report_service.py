@@ -374,11 +374,42 @@ def list_issue_reports(
 def get_issue_report(
     report_id: int,
 ) -> IssueReport | None:
-    """依 ID 取得單筆問題回報。"""
-    return db.session.get(
+    """
+    依 ID 取得單筆問題回報。
+
+    管理端顯示回報人時，優先用 IssueReport.line_user_id
+    回查 users 資料表的註冊姓名與學號。
+    不依賴 IssueReport.user relationship 是否已正確連結。
+    """
+    report = db.session.get(
         IssueReport,
         int(report_id),
     )
+
+    if report is None:
+        return None
+
+    registered_user = (
+        User.query
+        .filter_by(
+            line_user_id=report.line_user_id
+        )
+        .first()
+    )
+
+    # 僅附加給管理畫面使用，不修改／提交 IssueReport 資料。
+    report._registered_name = (
+        str(registered_user.name or "").strip()
+        if registered_user is not None
+        else ""
+    )
+    report._registered_student_id = (
+        str(registered_user.student_id or "").strip()
+        if registered_user is not None
+        else ""
+    )
+
+    return report
 
 
 def update_issue_report_status(
