@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Iterable
 
 from database import db
@@ -11,6 +12,10 @@ from models import (
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 REPORT_TYPES = {
     "question",
@@ -305,3 +310,132 @@ def count_issue_reports(
             )
 
     return query.count()
+
+
+VALID_ADMIN_STATUSES = {
+    "pending",
+    "reviewing",
+    "resolved",
+    "rejected",
+}
+
+
+def get_issue_report_counts() -> dict[str, int]:
+    """回傳管理端各狀態回報數量。"""
+    counts = {
+        status: 0
+        for status in VALID_ADMIN_STATUSES
+    }
+
+    rows = (
+        db.session.query(
+            IssueReport.status,
+            db.func.count(IssueReport.id),
+        )
+        .group_by(IssueReport.status)
+        .all()
+    )
+
+    for status, count in rows:
+        cleaned_status = str(status or "").strip()
+        if cleaned_status in counts:
+            counts[cleaned_status] = int(count or 0)
+
+    return counts
+
+
+def list_issue_reports(
+    *,
+    status: str = "pending",
+    limit: int = 8,
+) -> list[IssueReport]:
+    """依狀態列出最近的問題回報。"""
+    cleaned_status = str(status or "").strip()
+
+    if cleaned_status not in VALID_ADMIN_STATUSES:
+        raise ValueError(
+            f"unsupported issue report status: {cleaned_status}"
+        )
+
+    safe_limit = min(max(int(limit or 8), 1), 20)
+
+    return (
+        IssueReport.query
+        .filter_by(status=cleaned_status)
+        .order_by(
+            IssueReport.created_at.desc(),
+            IssueReport.id.desc(),
+        )
+        .limit(safe_limit)
+        .all()
+    )
+
+
+def get_issue_report(
+    report_id: int,
+) -> IssueReport | None:
+    """依 ID 取得單筆問題回報。"""
+    return db.session.get(
+        IssueReport,
+        int(report_id),
+    )
+
+
+def update_issue_report_status(
+    *,
+    report_id: int,
+    status: str,
+    reviewed_by: str,
+    admin_note: str | None = None,
+) -> IssueReport:
+    """更新管理端處理狀態。"""
+    cleaned_status = str(status or "").strip()
+
+    if cleaned_status not in VALID_ADMIN_STATUSES:
+        raise ValueError(
+            f"unsupported issue report status: {cleaned_status}"
+        )
+
+    record = get_issue_report(report_id)
+
+    if record is None:
+        raise ValueError(
+            f"IssueReport not found: {report_id}"
+        )
+
+    record.status = cleaned_status
+    record.reviewed_by = (
+        str(reviewed_by or "").strip()
+        or None
+    )
+
+    if admin_note is not None:
+        cleaned_note = str(admin_note or "").strip()
+        record.admin_note = cleaned_note or None
+
+    if cleaned_status in {"resolved", "rejected"}:
+        record.reviewed_at = utc_now()
+    else:
+        record.reviewed_at = None
+
+    try:
+        db.session.commit()
+
+        LOGGER.info(
+            "Issue report status updated: "
+            "report_id=%s status=%s reviewed_by=%s",
+            record.id,
+            cleaned_status,
+            record.reviewed_by,
+        )
+        return record
+
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to update issue report status: "
+            "report_id=%s status=%s",
+            report_id,
+            cleaned_status,
+        )
+        raise
