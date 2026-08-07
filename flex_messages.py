@@ -1378,3 +1378,513 @@ def build_exam_result_flex(
         contents=bubble,
         quick_reply=quick_reply,
     )
+
+
+# =============================================================
+# 管理員：問題回報管理
+# =============================================================
+
+ISSUE_STATUS_LABELS = {
+    "pending": "🔴 待處理",
+    "reviewing": "🟡 處理中",
+    "resolved": "✅ 已完成",
+    "rejected": "⚪ 判定無問題",
+}
+
+ISSUE_CATEGORY_LABELS = {
+    "wrong_answer": "答案疑似錯誤",
+    "bad_question": "題目敘述有問題",
+    "bad_option": "選項有問題",
+    "image_problem": "圖片異常",
+    "ai_wrong": "解析內容疑似錯誤",
+    "ai_answer_mismatch": "與題庫答案不一致",
+    "ai_unclear": "解析不清楚",
+    "ai_missing": "遺漏重要內容",
+    "other": "其他",
+}
+
+
+def build_admin_tools_flex():
+    """管理者從「我的資料／核准名單」進入管理功能。"""
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=[
+                TextComponent(
+                    text="🛠 管理功能",
+                    weight="bold",
+                    size="xl",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text="管理使用者資料與問題回報。",
+                    size="sm",
+                    color="#888888",
+                    margin="sm",
+                    wrap=True,
+                ),
+                SeparatorComponent(margin="lg"),
+                ButtonComponent(
+                    style="primary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="🛠 問題回報管理",
+                        text="問題回報管理",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="🏠 回首頁",
+                        text="主選單",
+                    ),
+                ),
+            ],
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="管理功能",
+        contents=bubble,
+    )
+
+
+def build_issue_report_dashboard_flex(counts):
+    """問題回報管理首頁。"""
+    counts = counts or {}
+
+    contents = [
+        TextComponent(
+            text="🛠 問題回報管理",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text="查看學生回報並更新處理狀態。",
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+    ]
+
+    for status in (
+        "pending",
+        "reviewing",
+        "resolved",
+        "rejected",
+    ):
+        label = ISSUE_STATUS_LABELS[status]
+        count = int(counts.get(status, 0) or 0)
+
+        contents.append(
+            ButtonComponent(
+                style="primary" if status in {"pending", "reviewing"} else "secondary",
+                margin="sm",
+                action=MessageAction(
+                    label=f"{label}　{count}",
+                    text=f"回報列表|{status}",
+                ),
+            )
+        )
+
+    contents.append(
+        ButtonComponent(
+            style="secondary",
+            margin="lg",
+            action=MessageAction(
+                label="🏠 回首頁",
+                text="主選單",
+            ),
+        )
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text="問題回報管理",
+        contents=bubble,
+    )
+
+
+def build_issue_report_list_flex(
+    reports,
+    *,
+    status,
+):
+    """顯示指定狀態的問題回報清單。"""
+    reports = list(reports or [])
+    status_label = ISSUE_STATUS_LABELS.get(
+        status,
+        str(status or ""),
+    )
+
+    contents = [
+        TextComponent(
+            text=status_label,
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"最近 {len(reports)} 筆回報",
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+    ]
+
+    if not reports:
+        contents.append(
+            TextComponent(
+                text="目前沒有此狀態的問題回報。",
+                size="sm",
+                color="#666666",
+                margin="lg",
+                wrap=True,
+            )
+        )
+    else:
+        for report in reports:
+            report_type = (
+                "🤖 解析"
+                if report.report_type == "ai_explanation"
+                else "⚠️ 題目"
+            )
+            category = ISSUE_CATEGORY_LABELS.get(
+                report.issue_category,
+                report.issue_category or "未分類",
+            )
+            subject = str(report.subject or "未標示科目")
+            question_number = report.question_number or "-"
+
+            contents.extend(
+                [
+                    BoxComponent(
+                        layout="vertical",
+                        margin="lg",
+                        spacing="xs",
+                        contents=[
+                            TextComponent(
+                                text=f"#{report.id} {report_type}｜{subject}",
+                                size="sm",
+                                weight="bold",
+                                wrap=True,
+                            ),
+                            TextComponent(
+                                text=f"題號 {question_number}｜{category}",
+                                size="xs",
+                                color="#666666",
+                                wrap=True,
+                            ),
+                        ],
+                    ),
+                    ButtonComponent(
+                        style="secondary",
+                        margin="sm",
+                        action=MessageAction(
+                            label=f"查看回報 #{report.id}",
+                            text=f"查看回報|{report.id}",
+                        ),
+                    ),
+                ]
+            )
+
+    contents.extend(
+        [
+            SeparatorComponent(margin="lg"),
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="↩️ 回問題回報管理",
+                    text="問題回報管理",
+                ),
+            ),
+            ButtonComponent(
+                style="secondary",
+                margin="sm",
+                action=MessageAction(
+                    label="🏠 回首頁",
+                    text="主選單",
+                ),
+            ),
+        ]
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="sm",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text=f"{status_label}問題回報",
+        contents=bubble,
+    )
+
+
+def _issue_options_text(options):
+    if not isinstance(options, list):
+        return ""
+
+    text = "\n".join(
+        str(item)
+        for item in options
+    ).strip()
+
+    if len(text) > 900:
+        text = text[:897] + "..."
+
+    return text
+
+
+def build_issue_report_detail_flex(report):
+    """顯示單筆問題回報內容與管理操作。"""
+    report_type_label = (
+        "🤖 AI 解析問題"
+        if report.report_type == "ai_explanation"
+        else "⚠️ 題目／答案問題"
+    )
+    status_label = ISSUE_STATUS_LABELS.get(
+        report.status,
+        report.status or "未知",
+    )
+    category_label = ISSUE_CATEGORY_LABELS.get(
+        report.issue_category,
+        report.issue_category or "未分類",
+    )
+
+    question_text = str(
+        report.question_text or ""
+    ).strip()
+    if len(question_text) > 1200:
+        question_text = question_text[:1197] + "..."
+
+    options_text = _issue_options_text(
+        report.options_json
+    )
+
+    ai_text = str(
+        report.ai_explanation or ""
+    ).strip()
+    if len(ai_text) > 1600:
+        ai_text = ai_text[:1597] + "..."
+
+    user_name = ""
+    student_id = ""
+    if getattr(report, "user", None) is not None:
+        user_name = str(
+            report.user.name or ""
+        ).strip()
+        student_id = str(
+            report.user.student_id or ""
+        ).strip()
+
+    reporter_text = user_name or "未保存姓名"
+    if student_id:
+        reporter_text += f"（{student_id}）"
+
+    contents = [
+        TextComponent(
+            text=f"回報 #{report.id}",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"{report_type_label}｜{status_label}",
+            size="sm",
+            color="#666666",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+        TextComponent(
+            text=f"科目：{report.subject or '-'}",
+            size="sm",
+            margin="lg",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"題號：{report.question_number or '-'}",
+            size="sm",
+            margin="sm",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"Question ID：{report.question_id or '-'}",
+            size="xs",
+            color="#777777",
+            margin="sm",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"回報人：{reporter_text}",
+            size="sm",
+            margin="sm",
+            wrap=True,
+        ),
+        TextComponent(
+            text=f"問題類型：{category_label}",
+            size="sm",
+            weight="bold",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+        TextComponent(
+            text="題目",
+            size="md",
+            weight="bold",
+            margin="lg",
+        ),
+        TextComponent(
+            text=question_text or "-",
+            size="sm",
+            margin="sm",
+            wrap=True,
+        ),
+    ]
+
+    if options_text:
+        contents.extend(
+            [
+                TextComponent(
+                    text="選項",
+                    size="md",
+                    weight="bold",
+                    margin="lg",
+                ),
+                TextComponent(
+                    text=options_text,
+                    size="sm",
+                    color="#555555",
+                    margin="sm",
+                    wrap=True,
+                ),
+            ]
+        )
+
+    contents.extend(
+        [
+            TextComponent(
+                text=f"學生答案：{report.student_answer or '-'}",
+                size="sm",
+                margin="lg",
+                wrap=True,
+            ),
+            TextComponent(
+                text=f"題庫答案：{report.correct_answer or '-'}",
+                size="sm",
+                weight="bold",
+                margin="sm",
+                wrap=True,
+            ),
+        ]
+    )
+
+    if report.report_type == "ai_explanation":
+        contents.extend(
+            [
+                SeparatorComponent(margin="lg"),
+                TextComponent(
+                    text="被回報的 AI 解析",
+                    size="md",
+                    weight="bold",
+                    margin="lg",
+                ),
+                TextComponent(
+                    text=ai_text or "未保存解析內容",
+                    size="sm",
+                    margin="sm",
+                    wrap=True,
+                ),
+            ]
+        )
+
+    contents.append(
+        SeparatorComponent(margin="lg")
+    )
+
+    if report.status == "pending":
+        contents.append(
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="🟡 開始處理",
+                    text=f"處理回報|{report.id}",
+                ),
+            )
+        )
+
+    if report.status in {"pending", "reviewing"}:
+        contents.extend(
+            [
+                ButtonComponent(
+                    style="primary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="✅ 已修正／確認",
+                        text=f"完成回報|{report.id}",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="⚪ 確認無問題",
+                        text=f"無問題回報|{report.id}",
+                    ),
+                ),
+            ]
+        )
+
+    contents.extend(
+        [
+            ButtonComponent(
+                style="secondary",
+                margin="lg",
+                action=MessageAction(
+                    label="↩️ 回問題回報管理",
+                    text="問題回報管理",
+                ),
+            ),
+            ButtonComponent(
+                style="secondary",
+                margin="sm",
+                action=MessageAction(
+                    label="🏠 回首頁",
+                    text="主選單",
+                ),
+            ),
+        ]
+    )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="sm",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text=f"問題回報 #{report.id}",
+        contents=bubble,
+    )
