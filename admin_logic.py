@@ -362,6 +362,32 @@ def handle_admin_commands(
             user_id,
             "✅ 資料已送出，請等待管理者審核。",
         )
+
+        # 通知所有管理者有新的註冊申請。
+        # 管理者通知失敗不影響學生已完成的註冊申請。
+        admin_notice = (
+            "🔔 新註冊申請\n\n"
+            f"姓名：{name}\n"
+            f"學校：{school}\n"
+            f"學號：{student_id}\n"
+            f"申請期限：{start_date} ～ {end_date}\n\n"
+            "請至「核准名單」查看，或輸入 show pending。"
+        )
+
+        for admin_id in get_admin_ids():
+            try:
+                send(
+                    line_bot_api,
+                    admin_id,
+                    admin_notice,
+                )
+            except Exception as error:
+                print(
+                    "Failed to notify admin about new registration:",
+                    admin_id,
+                    repr(error),
+                )
+
         return True
 
     # ---------------------------------------------------------
@@ -537,7 +563,26 @@ def handle_admin_commands(
                 repr(error),
             )
 
-        if notify_failed or rich_menu_failed:
+        # 核准完成後，再主動傳送第一頁主選單 Flex。
+        # 使用區域 import，降低模組初始化時的相依風險。
+        home_menu_failed = False
+
+        try:
+            from flex_messages import build_home_flex
+
+            line_bot_api.push_message(
+                line_user_id,
+                build_home_flex(),
+            )
+        except Exception as error:
+            home_menu_failed = True
+            print(
+                "Failed to send home Flex after approval:",
+                line_user_id,
+                repr(error),
+            )
+
+        if notify_failed or rich_menu_failed or home_menu_failed:
             warning_lines = [
                 "⚠️ 核准已完成，但有後續動作未成功："
             ]
@@ -547,6 +592,9 @@ def handle_admin_commands(
 
             if rich_menu_failed:
                 warning_lines.append("・無法綁定 Rich Menu")
+
+            if home_menu_failed:
+                warning_lines.append("・無法傳送第一頁主選單")
 
             send(
                 line_bot_api,
