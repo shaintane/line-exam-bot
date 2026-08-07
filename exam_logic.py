@@ -149,26 +149,8 @@ def explanation_action_quick_reply(
     allow_more_explanations: bool,
     allow_issue_report: bool,
 ):
-    """AI 解析完成後提供問題回報入口，必要時保留 5 題解析快捷鍵。"""
+    """AI 解析完成後：先顯示題號解析，再把「回報問題」放最後。"""
     items = []
-
-    if allow_issue_report:
-        items.extend(
-            [
-                QuickReplyButton(
-                    action=MessageAction(
-                        label="⚠️ 題目／答案問題",
-                        text="回報題目問題",
-                    )
-                ),
-                QuickReplyButton(
-                    action=MessageAction(
-                        label="🤖 AI解析問題",
-                        text="回報AI解析問題",
-                    )
-                ),
-            ]
-        )
 
     if allow_more_explanations and int(question_count or 0) == 5:
         items.extend(
@@ -181,6 +163,16 @@ def explanation_action_quick_reply(
             for number in range(1, 6)
         )
 
+    if allow_issue_report:
+        items.append(
+            QuickReplyButton(
+                action=MessageAction(
+                    label="⚠️ 回報問題",
+                    text="回報問題",
+                )
+            )
+        )
+
     if not items:
         return TextSendMessage(text=text)
 
@@ -190,18 +182,61 @@ def explanation_action_quick_reply(
     )
 
 
+def issue_report_type_quick_reply():
+    """回報問題第一層：選擇題目／答案或 AI 解析，亦可直接返回測驗。"""
+    return TextSendMessage(
+        text="⚠️ 回報問題\n\n請選擇要回報的問題類型：",
+        quick_reply=QuickReply(
+            items=[
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="📝 題目／答案",
+                        text="回報題目問題",
+                    )
+                ),
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="🤖 AI解析錯誤",
+                        text="回報AI解析問題",
+                    )
+                ),
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="↩️ 回測驗",
+                        text="回測驗",
+                    )
+                ),
+            ]
+        ),
+    )
+
+
+def exam_return_quick_reply(
+    *,
+    question_count: int,
+    allow_more_explanations: bool,
+    allow_issue_report: bool,
+):
+    """使用者取消回報時，重新顯示原本測驗／解析快捷選單。"""
+    return explanation_action_quick_reply(
+        "↩️ 已返回測驗。",
+        question_count,
+        allow_more_explanations=allow_more_explanations,
+        allow_issue_report=allow_issue_report,
+    )
+
 def issue_category_quick_reply(
     *,
     report_type: str,
     question_number: int,
 ):
-    """依問題類型顯示回報分類 Quick Reply。"""
+    """第二層分類；只有真正點選分類後才寫入回報紀錄。"""
     if report_type == "question":
         categories = QUESTION_REPORT_CATEGORIES
-        title = "⚠️ 題目／答案問題"
+        title = "📝 題目／答案"
     elif report_type == "ai_explanation":
         categories = AI_REPORT_CATEGORIES
-        title = "🤖 AI 解析問題"
+        title = "🤖 AI 解析錯誤"
     else:
         raise ValueError(f"unsupported report_type: {report_type}")
 
@@ -215,6 +250,24 @@ def issue_category_quick_reply(
         for label, code in categories.items()
     ]
 
+    # 取消／返回不會建立任何資料庫紀錄。
+    items.extend(
+        [
+            QuickReplyButton(
+                action=MessageAction(
+                    label="↩️ 回報問題",
+                    text="回報問題",
+                )
+            ),
+            QuickReplyButton(
+                action=MessageAction(
+                    label="📝 回測驗",
+                    text="回測驗",
+                )
+            ),
+        ]
+    )
+
     return TextSendMessage(
         text=(
             f"{title}\n"
@@ -223,7 +276,6 @@ def issue_category_quick_reply(
         ),
         quick_reply=QuickReply(items=items),
     )
-
 
 def handle_issue_report_entry(
     *,
@@ -1433,6 +1485,56 @@ def handle_exam_logic(
     # ---------------------------------------------------------
     # AI 解析後的問題回報流程
     # ---------------------------------------------------------
+    if cleaned_input == "回報問題":
+        if not session or not isinstance(
+            session.get("issue_report_context"),
+            dict,
+        ):
+            send_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 目前沒有可回報的 AI 解析紀錄，請先查看題目解析。",
+            )
+            return
+
+        session["issue_report_context"].pop(
+            "pending_report_type",
+            None,
+        )
+        line_bot_api.push_message(
+            user_id,
+            issue_report_type_quick_reply(),
+        )
+        return
+
+    if cleaned_input == "回測驗":
+        if not session:
+            send_text(
+                line_bot_api,
+                user_id,
+                "↩️ 已返回測驗。",
+            )
+            return
+
+        context = session.get("issue_report_context")
+        if isinstance(context, dict):
+            context.pop("pending_report_type", None)
+
+        remaining = EXPLANATION_LIMIT - int(
+            session.get("解析次數", 0) or 0
+        )
+        line_bot_api.push_message(
+            user_id,
+            exam_return_quick_reply(
+                question_count=int(
+                    session.get("question_count") or 0
+                ),
+                allow_more_explanations=remaining > 0,
+                allow_issue_report=isinstance(context, dict),
+            ),
+        )
+        return
+
     if cleaned_input == "回報題目問題":
         if not session:
             send_text(
