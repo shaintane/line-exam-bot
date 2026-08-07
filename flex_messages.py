@@ -1231,3 +1231,141 @@ def build_subject_selection_flex():
         alt_text="請選擇國考科目",
         contents=bubble,
     )
+
+def build_exam_result_flex(
+    *,
+    subject,
+    question_count,
+    correct_count,
+    rate,
+    wrong_answers,
+    explanation_limit=3,
+):
+    """建立一般測驗完成 Flex Message，5 題測驗保留解析 Quick Reply。"""
+
+    question_count = int(question_count or 0)
+    correct_count = int(correct_count or 0)
+    rate = float(rate or 0)
+    explanation_limit = int(explanation_limit or 0)
+    wrong_answers = list(wrong_answers or [])
+
+    if wrong_answers:
+        wrong_text = "\n".join(
+            f"題號 {item.get('題號', '')}｜你選 {item.get('作答', '')}｜正解 {item.get('正解', '')}"
+            for item in wrong_answers
+        )
+    else:
+        wrong_text = "🎉 全部答對！"
+
+    if question_count == 5:
+        ai_text = (
+            f"🤖 請點選下方題號查看 AI 解析\n"
+            f"本次最多解析 {explanation_limit} 題"
+        )
+    else:
+        ai_text = (
+            f"🤖 AI 解析上限為 {explanation_limit} 題\n"
+            "請輸入例如：題號3"
+        )
+
+    contents = [
+        TextComponent(
+            text="✅ 測驗完成",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        TextComponent(
+            text=str(subject or ""),
+            size="sm",
+            color="#888888",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+        BoxComponent(
+            layout="vertical",
+            margin="lg",
+            spacing="sm",
+            contents=[
+                TextComponent(
+                    text=f"答對題數：{correct_count} / {question_count}",
+                    size="md",
+                    weight="bold",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=f"正確率：{rate:g}%",
+                    size="md",
+                    wrap=True,
+                ),
+            ],
+        ),
+        SeparatorComponent(margin="lg"),
+        TextComponent(
+            text="錯題整理" if wrong_answers else "作答結果",
+            weight="bold",
+            size="md",
+            margin="lg",
+            wrap=True,
+        ),
+        TextComponent(
+            text=wrong_text,
+            size="sm",
+            color="#555555",
+            margin="sm",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+        TextComponent(
+            text=ai_text,
+            size="sm",
+            color="#666666",
+            margin="lg",
+            wrap=True,
+        ),
+        ButtonComponent(
+            style="primary",
+            margin="xl",
+            action=MessageAction(
+                label="📚 回到選科測驗",
+                text="測驗與AI導師",
+            ),
+        ),
+        ButtonComponent(
+            style="secondary",
+            margin="sm",
+            action=MessageAction(
+                label="🏠 回首頁",
+                text="主選單",
+            ),
+        ),
+    ]
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=contents,
+        )
+    )
+
+    quick_reply = None
+    if question_count == 5:
+        quick_reply = QuickReply(
+            items=[
+                QuickReplyButton(
+                    action=MessageAction(
+                        label=f"題{number}",
+                        text=f"題號{number}",
+                    )
+                )
+                for number in range(1, 6)
+            ]
+        )
+
+    return FlexSendMessage(
+        alt_text=f"{subject} 測驗完成" if subject else "測驗完成",
+        contents=bubble,
+        quick_reply=quick_reply,
+    )
