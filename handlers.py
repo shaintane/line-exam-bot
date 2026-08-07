@@ -1051,54 +1051,78 @@ def process_message(
     if active_session.get(
         "exam_mode"
     ) == "challenge_nickname_pending":
-        nickname_navigation_commands = {
-            "開始",
-            "選單",
-            "主選單",
-            "menu",
-            "Menu",
-            "MENU",
-            "排行榜",
-            "挑戰排行榜",
-            "Top10",
-            "TOP10",
-            "我的排名",
-            "我的挑戰",
-            "挑戰紀錄",
-            "挑戰模式",
-            "挑戰賽",
-            "一般測驗",
-            "測驗與AI導師",
-            "測驗與 AI 導師",
-            "個人學習",
-            "學習歷程",
-            "我的成績",
-            "弱點分析",
-            "分析弱點",
-            "開始弱點練習",
-            "弱點練習",
-            "註冊",
-            "註冊選單",
-            "註冊／會員",
-            "開始註冊",
-            "申請",
-            "我要註冊",
-            "核准名單",
-            "問題回報管理",
-        }
+        # Flex「輸入暱稱」按鈕只切換到真正的文字輸入狀態，
+        # 不可把按鈕送出的命令本身當成暱稱。
+        if user_input == "設定挑戰暱稱":
+            active_session["exam_mode"] = (
+                "challenge_nickname_input"
+            )
+            active_session["challenge_nickname_pending"] = False
+            active_session["challenge_nickname_input"] = True
+            user_sessions[user_id] = active_session
 
-        if user_input not in nickname_navigation_commands:
-            handle_challenge_nickname_input(
-                user_input,
-                user_id,
+            push_text(
                 line_bot_api,
-                user_sessions,
+                user_id,
+                "✏️ 請直接在下方輸入你的排行榜暱稱。",
             )
             return
 
-        # 使用者已選擇離開暱稱輸入流程，清除舊的 nickname pending session，
-        # 避免後續主選單按鈕再次被誤判為排行榜暱稱。
-        user_sessions.pop(user_id, None)
+        if user_input == "跳過挑戰暱稱":
+            try:
+                set_challenge_anonymous(user_id)
+            except Exception:
+                LOGGER.exception(
+                    "Failed to skip challenge nickname: "
+                    "user_id=%s",
+                    user_id,
+                )
+                push_text(
+                    line_bot_api,
+                    user_id,
+                    "⚠️ 暫時無法完成跳過設定，請稍後再試。",
+                )
+                return
+
+            user_sessions[user_id] = {
+                "completed": True,
+                "challenge_pending": True,
+                "exam_mode": "challenge_pending",
+            }
+
+            push_text(
+                line_bot_api,
+                user_id,
+                "✅ 已跳過暱稱設定，排行榜將顯示為「無暱稱」。",
+            )
+
+            push_message(
+                line_bot_api,
+                user_id,
+                build_leaderboard_flex(
+                    get_challenge_leaderboard(limit=10)
+                ),
+            )
+            return
+
+        # 尚未點選 Flex 按鈕時，不把其他文字直接當作暱稱。
+        push_text(
+            line_bot_api,
+            user_id,
+            "請點選「✏️ 輸入暱稱」或「⏭️ 跳過」。",
+        )
+        return
+
+    if active_session.get(
+        "exam_mode"
+    ) == "challenge_nickname_input":
+        handle_challenge_nickname_input(
+            user_input,
+            user_id,
+            line_bot_api,
+            user_sessions,
+        )
+        return
 
     # ---------------------------------------------------------
     # 顯示目前使用者的 LINE User ID
@@ -1447,86 +1471,6 @@ def process_message(
 
     if user_input == "開始挑戰":
         handle_start_challenge_command(
-            user_id,
-            line_bot_api,
-            user_sessions,
-        )
-        return
-
-    # ---------------------------------------------------------
-    # Top 10 暱稱設定
-    # ---------------------------------------------------------
-    nickname_session = user_sessions.get(user_id) or {}
-
-    if (
-        nickname_session.get("exam_mode")
-        == "challenge_nickname_pending"
-    ):
-        if user_input == "設定挑戰暱稱":
-            nickname_session["exam_mode"] = (
-                "challenge_nickname_input"
-            )
-            nickname_session["challenge_nickname_pending"] = False
-            nickname_session["challenge_nickname_input"] = True
-            user_sessions[user_id] = nickname_session
-
-            push_text(
-                line_bot_api,
-                user_id,
-                "✏️ 請直接在下方輸入你的排行榜暱稱。",
-            )
-            return
-
-        if user_input == "跳過挑戰暱稱":
-            try:
-                set_challenge_anonymous(user_id)
-            except Exception:
-                LOGGER.exception(
-                    "Failed to skip challenge nickname: "
-                    "user_id=%s",
-                    user_id,
-                )
-                push_text(
-                    line_bot_api,
-                    user_id,
-                    "⚠️ 暫時無法完成跳過設定，請稍後再試。",
-                )
-                return
-
-            user_sessions[user_id] = {
-                "completed": True,
-                "challenge_pending": True,
-                "exam_mode": "challenge_pending",
-            }
-
-            push_text(
-                line_bot_api,
-                user_id,
-                "✅ 已跳過暱稱設定，排行榜將顯示為「無暱稱」。",
-            )
-
-            push_message(
-                line_bot_api,
-                user_id,
-                build_leaderboard_flex(
-                    get_challenge_leaderboard(limit=10)
-                ),
-            )
-            return
-
-        push_text(
-            line_bot_api,
-            user_id,
-            "請點選「✏️ 輸入暱稱」或「⏭️ 跳過」。",
-        )
-        return
-
-    if (
-        nickname_session.get("exam_mode")
-        == "challenge_nickname_input"
-    ):
-        handle_challenge_nickname_input(
-            user_input,
             user_id,
             line_bot_api,
             user_sessions,
