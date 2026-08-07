@@ -37,6 +37,7 @@ from history_service import (
     start_exam_attempt,
     sync_access_and_apply_retention,
 )
+from issue_report_service import create_issue_report
 
 
 LOGGER = logging.getLogger(__name__)
@@ -122,6 +123,249 @@ def explanation_quick_reply(
         text=text,
         quick_reply=QuickReply(items=items),
     )
+
+
+QUESTION_REPORT_CATEGORIES = {
+    "答案疑似錯誤": "wrong_answer",
+    "題目敘述有問題": "bad_question",
+    "選項有問題": "bad_option",
+    "圖片異常": "image_problem",
+    "其他": "other",
+}
+
+AI_REPORT_CATEGORIES = {
+    "解析內容疑似錯誤": "ai_wrong",
+    "與題庫答案不一致": "ai_answer_mismatch",
+    "解析不清楚": "ai_unclear",
+    "遺漏重要內容": "ai_missing",
+    "其他": "other",
+}
+
+
+def explanation_action_quick_reply(
+    text: str,
+    question_count: int,
+    *,
+    allow_more_explanations: bool,
+    allow_issue_report: bool,
+):
+    """AI 解析完成後提供問題回報入口，必要時保留 5 題解析快捷鍵。"""
+    items = []
+
+    if allow_issue_report:
+        items.extend(
+            [
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="⚠️ 題目／答案問題",
+                        text="回報題目問題",
+                    )
+                ),
+                QuickReplyButton(
+                    action=MessageAction(
+                        label="🤖 AI解析問題",
+                        text="回報AI解析問題",
+                    )
+                ),
+            ]
+        )
+
+    if allow_more_explanations and int(question_count or 0) == 5:
+        items.extend(
+            QuickReplyButton(
+                action=MessageAction(
+                    label=f"題{number}",
+                    text=f"題號{number}",
+                )
+            )
+            for number in range(1, 6)
+        )
+
+    if not items:
+        return TextSendMessage(text=text)
+
+    return TextSendMessage(
+        text=text,
+        quick_reply=QuickReply(items=items),
+    )
+
+
+def issue_category_quick_reply(
+    *,
+    report_type: str,
+    question_number: int,
+):
+    """依問題類型顯示回報分類 Quick Reply。"""
+    if report_type == "question":
+        categories = QUESTION_REPORT_CATEGORIES
+        title = "⚠️ 題目／答案問題"
+    elif report_type == "ai_explanation":
+        categories = AI_REPORT_CATEGORIES
+        title = "🤖 AI 解析問題"
+    else:
+        raise ValueError(f"unsupported report_type: {report_type}")
+
+    items = [
+        QuickReplyButton(
+            action=MessageAction(
+                label=label,
+                text=f"問題回報分類|{code}",
+            )
+        )
+        for label, code in categories.items()
+    ]
+
+    return TextSendMessage(
+        text=(
+            f"{title}\n"
+            f"題號 {question_number}\n\n"
+            "請選擇要回報的問題類型："
+        ),
+        quick_reply=QuickReply(items=items),
+    )
+
+
+def handle_issue_report_entry(
+    *,
+    report_type: str,
+    user_id: str,
+    line_bot_api,
+    session: dict[str, Any],
+) -> None:
+    """開始題目／答案或 AI 解析問題回報流程。"""
+    context = session.get("issue_report_context")
+
+    if not isinstance(context, dict):
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 目前沒有可回報的 AI 解析紀錄，請先查看題目解析。",
+        )
+        return
+
+    answer_record_id = context.get("answer_record_id")
+    explanation_record_id = context.get("explanation_record_id")
+    question_number = int(context.get("question_number") or 0)
+
+    if not answer_record_id or not explanation_record_id or question_number <= 0:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 目前的解析紀錄不完整，請重新查看該題 AI 解析後再回報。",
+        )
+        return
+
+    context["pending_report_type"] = report_type
+
+    line_bot_api.push_message(
+        user_id,
+        issue_category_quick_reply(
+            report_type=report_type,
+            question_number=question_number,
+        ),
+    )
+
+
+def handle_issue_report_category(
+    *,
+    category_code: str,
+    user_id: str,
+    line_bot_api,
+    session: dict[str, Any],
+) -> None:
+    """儲存使用者選擇的問題回報分類。"""
+    context = session.get("issue_report_context")
+
+    if not isinstance(context, dict):
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 回報流程已失效，請重新查看該題 AI 解析。",
+        )
+        return
+
+    report_type = str(
+        context.get("pending_report_type", "")
+    ).strip()
+
+    if report_type == "question":
+        allowed_codes = set(QUESTION_REPORT_CATEGORIES.values())
+    elif report_type == "ai_explanation":
+        allowed_codes = set(AI_REPORT_CATEGORIES.values())
+    else:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 回報流程已失效，請重新選擇問題回報類型。",
+        )
+        return
+
+    cleaned_category = str(category_code or "").strip()
+
+    if cleaned_category not in allowed_codes:
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 無法辨識此問題分類，請重新操作。",
+        )
+        return
+
+    try:
+        report, created = create_issue_report(
+            line_user_id=user_id,
+            answer_record_id=int(context["answer_record_id"]),
+            explanation_record_id=int(
+                context["explanation_record_id"]
+            ),
+            report_type=report_type,
+            issue_category=cleaned_category,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Issue report creation failed: user_id=%s "
+            "answer_record_id=%s report_type=%s category=%s",
+            user_id,
+            context.get("answer_record_id"),
+            report_type,
+            cleaned_category,
+        )
+        send_text(
+            line_bot_api,
+            user_id,
+            "⚠️ 問題回報暫時無法送出，請稍後再試。",
+        )
+        return
+
+    context.pop("pending_report_type", None)
+
+    if not created:
+        send_text(
+            line_bot_api,
+            user_id,
+            (
+                "ℹ️ 這個問題您已經回報過，目前仍在處理中，"
+                "不需要重複送出。"
+            ),
+        )
+        return
+
+    LOGGER.info(
+        "Issue report submitted from LINE: "
+        "report_id=%s user_id=%s",
+        report.id,
+        user_id,
+    )
+
+    send_text(
+        line_bot_api,
+        user_id,
+        (
+            "✅ 問題回報已收到\n\n"
+            "管理員將進行確認，"
+            "感謝協助提升題庫與 AI 解析品質。"
+        ),
+    )
+
 
 def normalize_answer(answer: str) -> str:
     """將全形、大小寫與句點等答案格式統一。"""
@@ -721,6 +965,9 @@ def handle_explanation_request(
         )
         return
 
+    saved_answer_record_id = None
+    saved_explanation_record_id = None
+
     attempt_id = session.get("attempt_id")
     if attempt_id:
         try:
@@ -729,7 +976,7 @@ def handle_explanation_request(
                 question_number=question_number,
             )
             if answer_record:
-                save_explanation_record(
+                explanation_record = save_explanation_record(
                     answer_record_id=answer_record.id,
                     explanation_text=explanation,
                     model_name=os.getenv(
@@ -737,6 +984,8 @@ def handle_explanation_request(
                         "gpt-5-mini",
                     ).strip(),
                 )
+                saved_answer_record_id = answer_record.id
+                saved_explanation_record_id = explanation_record.id
             else:
                 LOGGER.warning(
                     "Explanation not persisted because answer record was not found: "
@@ -751,6 +1000,15 @@ def handle_explanation_request(
                 attempt_id,
                 question_number,
             )
+
+    if saved_answer_record_id and saved_explanation_record_id:
+        session["issue_report_context"] = {
+            "answer_record_id": saved_answer_record_id,
+            "explanation_record_id": saved_explanation_record_id,
+            "question_number": question_number,
+        }
+    else:
+        session.pop("issue_report_context", None)
 
     session["解析次數"] = session.get("解析次數", 0) + 1
 
@@ -769,15 +1027,19 @@ def handle_explanation_request(
             f"\n\n🤖 尚可解析 {remaining} 題，"
             "請直接點選下方題號。"
         )
-        line_bot_api.push_message(
-            user_id,
-            explanation_quick_reply(
-                text,
-                int(session.get("question_count") or 0),
+
+    line_bot_api.push_message(
+        user_id,
+        explanation_action_quick_reply(
+            text,
+            int(session.get("question_count") or 0),
+            allow_more_explanations=remaining > 0,
+            allow_issue_report=bool(
+                saved_answer_record_id
+                and saved_explanation_record_id
             ),
-        )
-    else:
-        send_text(line_bot_api, user_id, text)
+        ),
+    )
 
 
 def start_exam_with_questions(
@@ -1167,6 +1429,61 @@ def handle_exam_logic(
                 ),
             )
             return
+
+    # ---------------------------------------------------------
+    # AI 解析後的問題回報流程
+    # ---------------------------------------------------------
+    if cleaned_input == "回報題目問題":
+        if not session:
+            send_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 目前沒有可回報的 AI 解析紀錄。",
+            )
+            return
+
+        handle_issue_report_entry(
+            report_type="question",
+            user_id=user_id,
+            line_bot_api=line_bot_api,
+            session=session,
+        )
+        return
+
+    if cleaned_input == "回報AI解析問題":
+        if not session:
+            send_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 目前沒有可回報的 AI 解析紀錄。",
+            )
+            return
+
+        handle_issue_report_entry(
+            report_type="ai_explanation",
+            user_id=user_id,
+            line_bot_api=line_bot_api,
+            session=session,
+        )
+        return
+
+    if cleaned_input.startswith("問題回報分類|"):
+        if not session:
+            send_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 回報流程已失效，請重新查看該題 AI 解析。",
+            )
+            return
+
+        category_code = cleaned_input.split("|", 1)[1].strip()
+        handle_issue_report_category(
+            category_code=category_code,
+            user_id=user_id,
+            line_bot_api=line_bot_api,
+            session=session,
+        )
+        return
 
     # 「題號3」可在完成測驗後執行，因此必須先於新測驗判斷。
     if cleaned_input.startswith("題號"):
