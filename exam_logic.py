@@ -25,6 +25,7 @@ from linebot.models import (
     TextSendMessage,
 )
 from messaging import answer_quick_reply, question_count_quick_reply
+from flex_messages import build_exam_result_flex
 
 from access_control import check_user_access
 from history_service import (
@@ -1047,50 +1048,19 @@ def handle_answer(
                 attempt_id,
             )
 
-    summary = (
-        "📩 測驗已完成\n"
-        f"科目：{session.get('subject', '')}\n"
-        f"共 {question_count} 題，正確 {correct_count} 題，"
-        f"正確率 {rate}%\n\n"
-    )
-
-    if wrong_answers:
-        summary += "錯題如下：\n"
-        summary += "\n".join(
-            (
-                f"題號 {item['題號']}（你選 {item['作答']}） "
-                f"正解 {item['正解']}"
-            )
-            for item in wrong_answers
-        )
-    else:
-        summary += "🎉 全部答對！"
-
-    if question_count == 5:
-        summary += (
-            "\n\n🤖 AI 解析：請點選想查看的題目"
-            f"（本次最多 {EXPLANATION_LIMIT} 題）"
-            "\n📚 選擇其他科目請輸入：開始"
-        )
-    else:
-        summary += (
-            f"\n\n💡 AI 解析上限為 {EXPLANATION_LIMIT} 題，"
-            "請輸入例如：題號3"
-            "\n📚 選擇其他科目請輸入：開始"
-        )
-
     session["completed"] = True
 
-    if question_count == 5:
-        line_bot_api.push_message(
-            user_id,
-            explanation_quick_reply(
-                summary,
-                question_count,
-            ),
-        )
-    else:
-        send_text(line_bot_api, user_id, summary)
+    line_bot_api.push_message(
+        user_id,
+        build_exam_result_flex(
+            subject=str(session.get("subject", "")),
+            question_count=question_count,
+            correct_count=correct_count,
+            rate=rate,
+            wrong_answers=wrong_answers,
+            explanation_limit=EXPLANATION_LIMIT,
+        ),
+    )
 
 
 def handle_exam_logic(
