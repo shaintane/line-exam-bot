@@ -1685,9 +1685,29 @@ def build_issue_report_detail_flex(report):
     if len(ai_text) > 1600:
         ai_text = ai_text[:1597] + "..."
 
-    user_name = ""
-    student_id = ""
-    if getattr(report, "user", None) is not None:
+    user_name = str(
+        getattr(
+            report,
+            "_registered_name",
+            "",
+        )
+        or ""
+    ).strip()
+
+    student_id = str(
+        getattr(
+            report,
+            "_registered_student_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    # 相容舊資料：若 service 未附加註冊資料，再嘗試既有 relationship。
+    if (
+        not user_name
+        and getattr(report, "user", None) is not None
+    ):
         user_name = str(
             report.user.name or ""
         ).strip()
