@@ -691,14 +691,32 @@ def build_challenge_result_flex(
             )
 
     if needs_nickname:
-        contents.append(
-            TextComponent(
-                text="請直接輸入排行榜暱稱，設定後就會顯示在排行榜。",
-                size="sm",
-                color="#666666",
-                margin="lg",
-                wrap=True,
-            )
+        contents.extend(
+            [
+                TextComponent(
+                    text="🎉 恭喜進入 Top 10！請選擇是否設定排行榜暱稱。",
+                    size="sm",
+                    weight="bold",
+                    margin="lg",
+                    wrap=True,
+                ),
+                ButtonComponent(
+                    style="primary",
+                    margin="lg",
+                    action=MessageAction(
+                        label="✏️ 輸入暱稱",
+                        text="設定挑戰暱稱",
+                    ),
+                ),
+                ButtonComponent(
+                    style="secondary",
+                    margin="sm",
+                    action=MessageAction(
+                        label="⏭️ 跳過",
+                        text="跳過挑戰暱稱",
+                    ),
+                ),
+            ]
         )
 
     contents.extend(
