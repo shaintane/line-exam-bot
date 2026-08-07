@@ -1352,16 +1352,25 @@ def build_exam_result_flex(
 
     quick_reply = None
     if question_count == 5:
-        quick_reply = QuickReply(
-            items=[
-                QuickReplyButton(
-                    action=MessageAction(
-                        label=f"題{number}",
-                        text=f"題號{number}",
-                    )
+        quick_reply_items = [
+            QuickReplyButton(
+                action=MessageAction(
+                    label=f"題{number}",
+                    text=f"題號{number}",
                 )
-                for number in range(1, 6)
-            ]
+            )
+            for number in range(1, 6)
+        ]
+        quick_reply_items.append(
+            QuickReplyButton(
+                action=MessageAction(
+                    label="⚠️ 回報問題",
+                    text="回報問題",
+                )
+            )
+        )
+        quick_reply = QuickReply(
+            items=quick_reply_items
         )
 
     return FlexSendMessage(
