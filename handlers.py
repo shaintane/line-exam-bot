@@ -16,6 +16,10 @@ from flex_messages import (
     build_registration_menu_flex,
     build_subject_selection_flex,
     build_weakness_analysis_flex,
+    build_admin_tools_flex,
+    build_issue_report_dashboard_flex,
+    build_issue_report_detail_flex,
+    build_issue_report_list_flex,
 )
 
 from access_control import check_user_access
@@ -52,6 +56,12 @@ from exam_logic import (
     start_exam_with_questions,
 )
 from history_service import sync_access_and_apply_retention
+from issue_report_service import (
+    get_issue_report,
+    get_issue_report_counts,
+    list_issue_reports,
+    update_issue_report_status,
+)
 from learning_history import build_learning_history_message
 from weakness_service import (
     build_weakness_analysis,
@@ -1057,6 +1067,7 @@ def process_message(
             "申請",
             "我要註冊",
             "核准名單",
+            "問題回報管理",
         }
 
         if user_input not in nickname_navigation_commands:
@@ -1136,6 +1147,11 @@ def process_message(
                 line_bot_api,
                 registration_buffer,
             )
+            push_message(
+                line_bot_api,
+                user_id,
+                build_admin_tools_flex(),
+            )
             return
 
         # 一般使用者只能查看自己的姓名、學校與使用期限。
@@ -1153,6 +1169,179 @@ def process_message(
             user_id,
             build_my_registration_flex(record),
         )
+        return
+
+    # ---------------------------------------------------------
+    # 管理者：問題回報管理
+    # ---------------------------------------------------------
+    if user_input == "問題回報管理":
+        if not is_admin(user_id):
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 你沒有管理者權限。",
+            )
+            return
+
+        try:
+            counts = get_issue_report_counts()
+            push_message(
+                line_bot_api,
+                user_id,
+                build_issue_report_dashboard_flex(
+                    counts
+                ),
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to open issue report dashboard: "
+                "user_id=%s",
+                user_id,
+            )
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 問題回報管理暫時無法開啟，請稍後再試。",
+            )
+        return
+
+    if user_input.startswith("回報列表|"):
+        if not is_admin(user_id):
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 你沒有管理者權限。",
+            )
+            return
+
+        status = user_input.split("|", 1)[1].strip()
+
+        try:
+            reports = list_issue_reports(
+                status=status,
+                limit=8,
+            )
+            push_message(
+                line_bot_api,
+                user_id,
+                build_issue_report_list_flex(
+                    reports,
+                    status=status,
+                ),
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to list issue reports: "
+                "user_id=%s status=%s",
+                user_id,
+                status,
+            )
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 問題回報清單讀取失敗，請稍後再試。",
+            )
+        return
+
+    if user_input.startswith("查看回報|"):
+        if not is_admin(user_id):
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 你沒有管理者權限。",
+            )
+            return
+
+        try:
+            report_id = int(
+                user_input.split("|", 1)[1].strip()
+            )
+            report = get_issue_report(report_id)
+
+            if report is None:
+                push_text(
+                    line_bot_api,
+                    user_id,
+                    "⚠️ 查無此問題回報。",
+                )
+                return
+
+            push_message(
+                line_bot_api,
+                user_id,
+                build_issue_report_detail_flex(
+                    report
+                ),
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to read issue report: "
+                "user_id=%s input=%s",
+                user_id,
+                user_input,
+            )
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 問題回報讀取失敗，請稍後再試。",
+            )
+        return
+
+    issue_status_commands = {
+        "處理回報|": "reviewing",
+        "完成回報|": "resolved",
+        "無問題回報|": "rejected",
+    }
+
+    matched_prefix = next(
+        (
+            prefix
+            for prefix in issue_status_commands
+            if user_input.startswith(prefix)
+        ),
+        None,
+    )
+
+    if matched_prefix:
+        if not is_admin(user_id):
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 你沒有管理者權限。",
+            )
+            return
+
+        try:
+            report_id = int(
+                user_input.split("|", 1)[1].strip()
+            )
+            report = update_issue_report_status(
+                report_id=report_id,
+                status=issue_status_commands[
+                    matched_prefix
+                ],
+                reviewed_by=user_id,
+            )
+
+            push_message(
+                line_bot_api,
+                user_id,
+                build_issue_report_detail_flex(
+                    report
+                ),
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to update issue report: "
+                "user_id=%s input=%s",
+                user_id,
+                user_input,
+            )
+            push_text(
+                line_bot_api,
+                user_id,
+                "⚠️ 問題回報狀態更新失敗，請稍後再試。",
+            )
         return
 
     # ---------------------------------------------------------
