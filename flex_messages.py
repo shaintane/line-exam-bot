@@ -1908,3 +1908,255 @@ def build_issue_report_detail_flex(report):
         alt_text=f"問題回報 #{report.id}",
         contents=bubble,
     )
+
+
+def _split_ai_explanation_sections(explanation):
+    """將目前 Structured Output 組成的純文字解析拆成 Flex 區塊。"""
+    text = str(explanation or "").strip()
+
+    labels = [
+        "作答結果：",
+        "正確答案：",
+        "核心解析：",
+        "選項辨析：",
+        "結論：",
+        "國考重點：",
+    ]
+
+    found = []
+    for label in labels:
+        pos = text.find(label)
+        if pos >= 0:
+            found.append((pos, label))
+
+    found.sort()
+
+    if not found:
+        return {"body": text}
+
+    key_map = {
+        "作答結果：": "result",
+        "正確答案：": "correct_answer",
+        "核心解析：": "core",
+        "選項辨析：": "option_analysis",
+        "結論：": "conclusion",
+        "國考重點：": "exam_tip",
+    }
+
+    sections = {}
+
+    for index, (pos, label) in enumerate(found):
+        start = pos + len(label)
+        end = (
+            found[index + 1][0]
+            if index + 1 < len(found)
+            else len(text)
+        )
+
+        sections[key_map[label]] = text[start:end].strip()
+
+    return sections
+
+
+def build_ai_explanation_flex(
+    *,
+    question_number,
+    explanation,
+    image_url="",
+    remaining=0,
+    question_count=5,
+    allow_ai_report=False,
+):
+    """建立單題 AI 解析 Flex Message。"""
+    question_number = int(question_number or 0)
+    remaining = max(int(remaining or 0), 0)
+    question_count = int(question_count or 0)
+
+    sections = _split_ai_explanation_sections(explanation)
+
+    contents = [
+        TextComponent(
+            text=f"📘 題號 {question_number} 解析",
+            weight="bold",
+            size="xl",
+            wrap=True,
+        ),
+        SeparatorComponent(margin="lg"),
+    ]
+
+    result = str(sections.get("result", "")).strip()
+    correct_answer = str(sections.get("correct_answer", "")).strip()
+
+    if result:
+        contents.append(
+            TextComponent(
+                text=f"作答結果：{result}",
+                size="md",
+                weight="bold",
+                margin="lg",
+                wrap=True,
+            )
+        )
+
+    if correct_answer:
+        contents.append(
+            TextComponent(
+                text=f"正確答案：{correct_answer}",
+                size="md",
+                margin="sm",
+                wrap=True,
+            )
+        )
+
+    section_items = [
+        ("core", "核心解析"),
+        ("option_analysis", "選項辨析"),
+        ("conclusion", "結論"),
+        ("exam_tip", "🎯 國考重點"),
+    ]
+
+    any_section = False
+
+    for key, title in section_items:
+        value = str(sections.get(key, "")).strip()
+
+        if not value:
+            continue
+
+        if not any_section:
+            contents.append(
+                SeparatorComponent(margin="lg")
+            )
+            any_section = True
+
+        contents.extend(
+            [
+                TextComponent(
+                    text=title,
+                    size="md",
+                    weight="bold",
+                    margin="lg",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=value,
+                    size="sm",
+                    color="#555555",
+                    margin="sm",
+                    wrap=True,
+                ),
+            ]
+        )
+
+    fallback = str(sections.get("body", "")).strip()
+
+    if fallback:
+        contents.append(
+            TextComponent(
+                text=fallback,
+                size="sm",
+                color="#555555",
+                margin="lg",
+                wrap=True,
+            )
+        )
+
+    if image_url:
+        contents.extend(
+            [
+                SeparatorComponent(margin="lg"),
+                TextComponent(
+                    text="🔗 題目圖片",
+                    size="sm",
+                    weight="bold",
+                    margin="lg",
+                    wrap=True,
+                ),
+                TextComponent(
+                    text=str(image_url),
+                    size="xs",
+                    color="#777777",
+                    margin="sm",
+                    wrap=True,
+                ),
+            ]
+        )
+
+    contents.extend(
+        [
+            SeparatorComponent(margin="xl"),
+            ButtonComponent(
+                style="primary",
+                margin="lg",
+                action=MessageAction(
+                    label="📚 回分科測驗",
+                    text="測驗與AI導師",
+                ),
+            ),
+        ]
+    )
+
+    if remaining > 0 and question_count == 5:
+        contents.append(
+            TextComponent(
+                text=(
+                    f"🤖 尚可解析 {remaining} 題，"
+                    "請直接點選下方題號。"
+                ),
+                size="xs",
+                color="#777777",
+                margin="lg",
+                wrap=True,
+            )
+        )
+    elif remaining <= 0:
+        contents.append(
+            TextComponent(
+                text="🤖 本次測驗 AI 解析次數已使用完畢。",
+                size="xs",
+                color="#777777",
+                margin="lg",
+                wrap=True,
+            )
+        )
+
+    quick_reply_items = []
+
+    if remaining > 0 and question_count == 5:
+        quick_reply_items.extend(
+            QuickReplyButton(
+                action=MessageAction(
+                    label=f"題{number}",
+                    text=f"題號{number}",
+                )
+            )
+            for number in range(1, 6)
+        )
+
+    if allow_ai_report:
+        quick_reply_items.append(
+            QuickReplyButton(
+                action=MessageAction(
+                    label="🤖 回報解析問題",
+                    text="回報解析問題",
+                )
+            )
+        )
+
+    bubble = BubbleContainer(
+        body=BoxComponent(
+            layout="vertical",
+            spacing="md",
+            contents=contents,
+        )
+    )
+
+    return FlexSendMessage(
+        alt_text=f"題號 {question_number} AI 解析",
+        contents=bubble,
+        quick_reply=(
+            QuickReply(items=quick_reply_items)
+            if quick_reply_items
+            else None
+        ),
+    )
