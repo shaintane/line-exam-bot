@@ -57,11 +57,11 @@ rich_menu = RichMenu(
 
 rich_menu_id = line_bot_api.create_rich_menu(rich_menu=rich_menu)
 
-image_path = Path(__file__).with_name("rich_menu_v2.png")
+image_path = Path(__file__).with_name("rich_menu_v2.jpg")
 with image_path.open("rb") as image_file:
     line_bot_api.set_rich_menu_image(
         rich_menu_id,
-        "image/png",
+        "image/jpeg",
         image_file,
     )
 
