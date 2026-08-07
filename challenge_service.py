@@ -405,6 +405,22 @@ def finalize_expired_challenges(
 
 
 
+ANONYMOUS_NICKNAME_PREFIX = "__anonymous__:"
+
+
+def _display_nickname(profile: ChallengeProfile | None) -> str | None:
+    """將內部匿名標記轉成排行榜顯示文字。"""
+    if profile is None:
+        return None
+
+    nickname = str(profile.nickname or "").strip()
+
+    if nickname.startswith(ANONYMOUS_NICKNAME_PREFIX):
+        return "無暱稱"
+
+    return nickname or None
+
+
 def get_challenge_profile(
     line_user_id: str,
 ) -> ChallengeProfile | None:
@@ -492,6 +508,51 @@ def set_challenge_nickname(
         raise
 
 
+def set_challenge_anonymous(
+    line_user_id: str,
+) -> ChallengeProfile:
+    """
+    使用者在 Top 10 暱稱設定選擇「跳過」時使用。
+
+    資料庫 nickname 欄位具 unique / non-null 限制，
+    因此使用每位使用者唯一的內部標記保存「已選擇跳過」狀態；
+    對外排行榜一律顯示為「無暱稱」。
+    """
+    user = get_or_create_user(line_user_id)
+    internal_nickname = f"{ANONYMOUS_NICKNAME_PREFIX}{user.id}"
+
+    profile = (
+        ChallengeProfile.query
+        .filter_by(user_id=user.id)
+        .first()
+    )
+
+    if profile is None:
+        profile = ChallengeProfile(
+            user_id=user.id,
+            nickname=internal_nickname,
+        )
+        db.session.add(profile)
+    else:
+        profile.nickname = internal_nickname
+        profile.updated_at = utc_now()
+
+    try:
+        db.session.commit()
+        LOGGER.info(
+            "Challenge nickname skipped: user_id=%s",
+            line_user_id,
+        )
+        return profile
+    except Exception:
+        db.session.rollback()
+        LOGGER.exception(
+            "Failed to save challenge anonymous profile: user_id=%s",
+            line_user_id,
+        )
+        raise
+
+
 def _best_attempts_by_user() -> dict[int, ChallengeAttempt]:
     """
     取得每位使用者的歷史最佳挑戰。
@@ -559,9 +620,8 @@ def get_challenge_leaderboard(
         )
 
         nickname = (
-            profile.nickname
-            if profile is not None
-            else "匿名挑戰者"
+            _display_nickname(profile)
+            or "無暱稱"
         )
 
         rows.append(
@@ -629,11 +689,7 @@ def get_personal_challenge_summary(
         return {
             "has_record": False,
             "has_profile": profile is not None,
-            "nickname": (
-                profile.nickname
-                if profile is not None
-                else None
-            ),
+            "nickname": _display_nickname(profile),
         }
 
     ranked: list[ChallengeAttempt] = list(
@@ -661,11 +717,7 @@ def get_personal_challenge_summary(
 
     return {
         "has_profile": profile is not None,
-        "nickname": (
-            profile.nickname
-            if profile is not None
-            else None
-        ),
+        "nickname": _display_nickname(profile),
         "has_record": True,
         "rank": rank,
         "correct_count": int(best.correct_count or 0),
