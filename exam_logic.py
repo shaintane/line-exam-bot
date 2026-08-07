@@ -25,7 +25,7 @@ from linebot.models import (
     TextSendMessage,
 )
 from messaging import answer_quick_reply, question_count_quick_reply
-from flex_messages import build_exam_result_flex
+from flex_messages import build_ai_explanation_flex, build_exam_result_flex
 
 from access_control import check_user_access
 from history_service import (
@@ -1108,6 +1108,12 @@ def handle_explanation_request(
         )
         return
 
+    send_text(
+        line_bot_api,
+        user_id,
+        "🤖 AI 解析中，請稍候…",
+    )
+
     explanation = generate_explanation(
         client,
         question,
@@ -1178,28 +1184,23 @@ def handle_explanation_request(
 
     session["解析次數"] = session.get("解析次數", 0) + 1
 
-    text = f"📘 題號 {question_number} 解析：\n{explanation}"
     image_url = build_image_url(
         str(session.get("repo", "")),
         question.get("圖片連結"),
     )
-    if image_url:
-        text += f"\n\n🔗 圖片：{image_url}"
 
     remaining = EXPLANATION_LIMIT - session.get("解析次數", 0)
 
-    if remaining > 0 and int(session.get("question_count") or 0) == 5:
-        text += (
-            f"\n\n🤖 尚可解析 {remaining} 題，"
-            "請直接點選下方題號。"
-        )
-
     line_bot_api.push_message(
         user_id,
-        explanation_action_quick_reply(
-            text,
-            int(session.get("question_count") or 0),
-            allow_more_explanations=remaining > 0,
+        build_ai_explanation_flex(
+            question_number=question_number,
+            explanation=explanation,
+            image_url=image_url,
+            remaining=remaining,
+            question_count=int(
+                session.get("question_count") or 0
+            ),
             allow_ai_report=bool(
                 saved_answer_record_id
                 and saved_explanation_record_id
